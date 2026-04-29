@@ -28,7 +28,7 @@ uint16_t read_value(void) {
 }
 
 void setup() {
-	Serial.begin(115200):
+	Serial.begin(115200);
 	while (!Serial);
 	
 	Serial.println("Tactile Skin Initialising");
