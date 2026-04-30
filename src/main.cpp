@@ -13,6 +13,8 @@ extern "C" {
 	#include "matrix_scan.h"
 }
 
+matrix_config_t skin_config;
+
 /**
  * @brief Logic called by matrix_scan.c to toggle pins.
  */
@@ -21,9 +23,10 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
 }
 
 /**
- * @brief Placeholder for reading logic.
+ * @brief Bridge logic to retrieve data.
  */
-uint16_t read_value(void) {
+uint16_t get_sensor_value(void) {
+	// TODO: Insert reading logic.
 	return 0;
 }
 
@@ -34,19 +37,28 @@ void setup() {
 	Serial.println("Tactile Skin Initialising");
 	
 	// Initialise all Mux Select Pins as OUTPUT
-	const uint8_t row_mux[] = {PIN_ROW_S0, PIN_ROW_S1, PIN_ROW_S2, PIN_ROW_S3, PIN_ROW_S4};
-	const uint8_t col_mux[] = {PIN_COL_S0, PIN_COL_S1, PIN_COL_S2, PIN_COL_S3, PIN_COL_S4};
+	// TODO: Define Row and Column Hardware.
 	
-	for (int i = 0; i < 5; ++i) {
-		pinMode(row_mux[i], OUTPUT);
-		pinMode(col_mux[i], OUTPUT);
+	for (int i = 0; i < skin_config.num_row_addr_pins; ++i) {
+		pinMode(skin_config.row_addr_pins[i], OUTPUT);
 	}
+	
+	for (int i = 0; i < skin_config.num_col_addr_pins; ++i) {
+		pinMode(skin_config.col_addr_pins[i], OUTPUT);
+	}
+	
+	matrix_init(&skin_config);
+	
+	Serial.print("Grid Initialised: ");
+	Serial.print(skin_config.active_rows);
+	Serial.print("x");
+	Serial.println(skin_config.active_cols);
 }
 
 void loop() {
-	static uint16_t sensor_data[MATRIX_ROWS * MATRIX_COLS];
+	static uint16_t sensor_data[MAX_BUFFER_SIZE];
 	
 	matrix_scan_grid(sensor_data);
 	
-	delay(100);
+	delay(50);
 }

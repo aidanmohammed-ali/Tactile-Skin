@@ -12,28 +12,40 @@
 #include <stdint.h>
 
 /** Hardware Configuration **/
-// Row Mux Select Pins
-#define PIN_ROW_S0 12
-#define PIN_ROW_S1 13
-#define PIN_ROW_S2 14
-#define PIN_ROW_S3 15
-#define PIN_ROW_S4 16
+typedef struct {
+	// Address Pins
+	uint8_t row_addr_pins[8];
+	uint8_t col_addr_pins[8];
+	uint8_t num_row_addr_pins;
+	uint8_t num_col_addr_pins;
+	
+	// Enable Pins
+	uint8_t row_en_pins[8];
+	uint8_t col_en_pins[8];
+	uint8_t num_row_en_pins;
+	uint8_t num_col_en_pins;
+	
+	// Analog Pins
+	uint8_t analog_pins[8];
+	uint8_t num_analog_pins;
+	
+	// Dimensions
+	uint16_t active_rows;
+	uint16_t active_cols;
+} matrix_config_t;
 
-// Row Mux Select Pins
-#define PIN_COL_S0 17
-#define PIN_COL_S1 18
-#define PIN_COL_S2 19
-#define PIN_COL_S3 20
-#define PIN_COL_S4 21
-
-/** Matrix Dimensions **/
-#define MATRIX_ROWS		32
-#define MATRIX_COLS		32
-#define MATRIX_SIZE		(MATRIX_ROWS * MATRIX_COLS)
+/** Maximum Hardware Capacity **/
+#define MAX_DIMENSION		256
+#define MAX_BUFFER_SIZE		(MAX_DIMENSION * MAX_DIMENSION)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Hardware initialisation function.
+ */
+void matrix_init(matrix_config_t* config);
 
 /**
  * @brief Performs a full scan of the matrix.
@@ -54,6 +66,11 @@ void set_mux_col(uint8_t addr);
  * @brief Bridge function to set physical GPIO states.
  */
 void set_gpio_state(uint8_t gpio_pin, uint8_t state);
+
+/**
+ * @brief Bridge function to read physical analog pins.
+ */
+uint16_t get_sensor_value();
 
 #ifdef __cplusplus
 }
