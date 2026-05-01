@@ -8,7 +8,7 @@ This project focuses on creating a thin, flexible tactile skin that measures mec
 * **Goal:**
 
 ## Repository Structure
-* `/src`: Main firmare
+* `/src`: Main firmware
 
 ## Contribution Guidelines
 
