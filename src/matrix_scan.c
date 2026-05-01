@@ -49,6 +49,10 @@ void matrix_scan_grid(uint16_t *buffer) {
 		for (uint16_t c = 0; c < board_config.active_cols; ++c) {
 			set_mux_col(c);
 			
+			if (board_config.settle_time_us > 0) {
+				delay_us(board_config.settle_time_us);
+			}
+			
 			size_t index = (r * board_config.active_cols) + c;
 			buffer[index] = get_sensor_value();
 		}

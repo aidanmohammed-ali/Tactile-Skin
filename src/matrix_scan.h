@@ -32,6 +32,9 @@ typedef struct {
 	// Dimensions
 	uint16_t active_rows;
 	uint16_t active_cols;
+	
+	// Settling Time (in microseconds)
+	uint16_t settle_time_us;
 } matrix_config_t;
 
 /** Maximum Hardware Capacity **/
@@ -71,6 +74,11 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state);
  * @brief Bridge function to read physical analog pins.
  */
 uint16_t get_sensor_value();
+
+/**
+ * @brief Bridge function for microsecond delays.
+ */
+void delay_us(uint16_t us);
 
 #ifdef __cplusplus
 }

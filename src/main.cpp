@@ -30,6 +30,13 @@ uint16_t get_sensor_value(void) {
 	return 0;
 }
 
+/**
+ * @brief Bridge logic for delay.
+ */
+void delay_us(uint16_t us) {
+	delayMicroseconds(us);
+}
+
 void setup() {
 	Serial.begin(115200);
 	while (!Serial);
