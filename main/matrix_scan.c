@@ -27,6 +27,9 @@ void matrix_init(matrix_config_t* config) {
 	board_config.active_rows = r_channels * (board_config.num_row_en_pins > 0 ? board_config.num_row_en_pins : 1);
 	board_config.active_cols = c_channels * (board_config.num_col_en_pins > 0 ? board_config.num_col_en_pins : 1);
 	
+	config->active_rows = board_config.active_rows;
+	config->active_cols = board_config.active_cols;
+	
 	if (board_config.active_rows > MAX_DIMENSION ||
 			board_config.active_cols > MAX_DIMENSION) {
 		return;	
