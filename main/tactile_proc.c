@@ -31,7 +31,7 @@ void tactile_proc_init(proc_config_t *config) {
  */
 void tactile_calibration(const uint16_t *raw_frame, uint16_t *baseline_buffer, uint16_t size) {
 	for (uint16_t i = 0; i < size; ++i) {
-		baseline_buffer[i] = raw_frame[i]
+		baseline_buffer[i] = raw_frame[i];
 	}
 }
 
