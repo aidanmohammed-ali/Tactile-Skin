@@ -73,7 +73,7 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state);
 /**
  * @brief Bridge function to read physical analog pins.
  */
-uint16_t get_sensor_value();
+uint16_t get_sensor_value(void);
 
 /**
  * @brief Bridge function for microsecond delays.
