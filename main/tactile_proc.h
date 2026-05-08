@@ -43,7 +43,7 @@ void tactile_zero_calibration(const uint16_t *raw_frame, uint16_t *baseline_buff
 /**
  * @brief Performs 3-point quadratic fit.
  */
-void tactile_fit_curve(proc_config_t *config, float *x_samples[3], float y_values[3], uint16_t size);
+void tactile_fit_curve(float *x_samples[3], float y_values[3], uint16_t size);
 
 /**
  * @brief Process a raw frame into clean pressure data.
