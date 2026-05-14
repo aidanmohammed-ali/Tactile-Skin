@@ -42,15 +42,15 @@ void matrix_init(matrix_config_t* config) {
  * This function iterates through the rows and columns defined in the header.
  */
 void matrix_scan_grid(uint16_t *buffer) {
-	if (buffer == NULL) {
+	if (buffer == NULL || board_config.set_row_func == NULL || board_config.set_col_func == NULL) {
 		return;
 	}
 	
 	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
-		set_mux_row(r);
+		board_config.set_row_func(r);
 		
 		for (uint16_t c = 0; c < board_config.active_cols; ++c) {
-			set_mux_col(c);
+			board_config.set_col_func(c);
 			
 			if (board_config.settle_time_us > 0) {
 				delay_us(board_config.settle_time_us);
@@ -103,5 +103,35 @@ void set_mux_col(uint8_t addr) {
 	for (uint8_t i = 0; i < board_config.num_col_addr_pins; ++i) {
 		uint8_t state = (local_addr >> i) & 0x01;
 		set_gpio_state(board_config.col_addr_pins[i], state);
+	}
+}
+
+/**
+ * @brief Performs a parallel scan.
+ */
+void matrix_scan_parallel(uint16_t* buffer) {
+	if (buffer == NULL || board_config.set_row_func == NULL || board_config.set_col_func == NULL) {
+		return;
+	}
+	
+	uint16_t half_width = board_config.active_cols / 2;
+	
+	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
+		board_config.set_row_func(r);
+		
+		for (uint16_t c = 0; c < half_width; ++c) {
+			board_config.set_col_func(c);
+			
+			if (board_config.settle_time_us > 0) {
+				delay_us(board_config.settle_time_us);
+			}
+			
+			uint16_t val_a, val_b;
+			get_sensor_pair(&val_a, &val_b);
+			
+			size_t base_index = (r * board_config.active_cols);
+			buffer[base_index + c] = val_a;
+			buffer[base_index + c + half_width] = val_b;
+		}
 	}
 }

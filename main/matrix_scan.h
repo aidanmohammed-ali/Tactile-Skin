@@ -13,6 +13,12 @@
 
 /** Hardware Configuration **/
 typedef struct {
+	// Hardware Control
+	void (*set_row_func)(uint8_t addr);
+	void (*set_col_func)(uint8_t addr);
+	
+	uint8_t use_parallel_scan;
+	
 	// Address Pins
 	uint8_t row_addr_pins[8];
 	uint8_t col_addr_pins[8];
@@ -38,7 +44,7 @@ typedef struct {
 } matrix_config_t;
 
 /** Maximum Hardware Capacity **/
-#define MAX_DIMENSION		256
+#define MAX_DIMENSION		16
 #define MAX_BUFFER_SIZE		(MAX_DIMENSION * MAX_DIMENSION)
 
 #ifdef __cplusplus
@@ -74,6 +80,16 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state);
  * @brief Bridge function to read physical analog pins.
  */
 uint16_t get_sensor_value(void);
+
+/**
+ * @brief Bridge function to read two sensors at once.
+ */
+void get_sensor_pair(uint16_t *val_a, uint16_t *val_b);
+
+/**
+ * @brief Performs a parallel scan.
+ */
+void matrix_scan_parallel(uint16_t* buffer);
 
 /**
  * @brief Bridge function for microsecond delays.
