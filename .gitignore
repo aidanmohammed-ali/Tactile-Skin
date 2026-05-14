@@ -11,3 +11,4 @@ sdkconfig.old
 
 # IDE
 .vscode/
+.pio/
