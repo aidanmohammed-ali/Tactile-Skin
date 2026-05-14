@@ -1,0 +1,8 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "AD7147") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/AD7147.pretty") (options "") (descr ""))
+	(lib (name "AD7142") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/AD7142.pretty") (options "") (descr ""))
+	(lib (name "8pinfpc") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/8pinfpc.pretty") (options "") (descr ""))
+	(lib (name "16pinfpc") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/16pinfpc.pretty") (options "") (descr ""))
+	(lib (name "custom_libs") (type "KiCad") (uri "${KIPRJMOD}/custom_libs") (options "") (descr ""))
+)
