@@ -79,7 +79,7 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state);
 /**
  * @brief Bridge function to read physical analog pins.
  */
-uint16_t get_sensor_value(void);
+uint16_t read_analog(void);
 
 /**
  * @brief Bridge function to read two sensors at once.
