@@ -108,6 +108,7 @@ void set_mux_col(uint8_t addr) {
 
 /**
  * @brief Performs a parallel scan.
+ * @param buffer Pointer to the memory where values will be stored.
  */
 void matrix_scan_parallel(uint16_t* buffer) {
 	if (buffer == NULL || board_config.set_row_func == NULL || board_config.set_col_func == NULL) {
