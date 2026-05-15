@@ -31,22 +31,33 @@ extern "C" {
 #endif
 
 /**
- * @brief Processing initialisation function.
+ * @brief Initialise the processing logic.
+ * @param config Pointer to the structure containing processing information.
  */
 void tactile_proc_init(proc_config_t *config);
 
 /**
  * @brief Simple zero-reference calibration.
+ * @param raw_frame Pointer to the start of the array containing sensor data.
+ * @param baseline_buffer Pointer to where the resting state values are saved.
+ * @param size Total number of sensor points in the grid.
  */
 void tactile_zero_calibration(const uint16_t *raw_frame, uint16_t *baseline_buffer, uint16_t size);
 
 /**
- * @brief Performs 3-point quadratic fit.
+ * @brief Performs 3-point quadratic fit logic.
+ * @param x_samples Raw sensor inputs.
+ * @param y_values Reference values.
+ * @param size Total number of sensor points in the grid.
  */
 void tactile_fit_curve(float *x_samples[3], float y_values[3], uint16_t size);
 
 /**
  * @brief Process a raw frame into clean pressure data.
+ * @param raw_frame Pointer to the start of the array containing sensor data.
+ * @param baseline Pointer to where the resting state values are stored.
+ * @param processed_frame Pointer to where the processed frame is stored.
+ * @param size Total number of sensor points in the grid.
  */
 void tactile_process_frame(const uint16_t *raw_frame, uint16_t *processed_frame, uint16_t size);
 
