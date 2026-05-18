@@ -41,13 +41,13 @@ void tactile_zero_calibration(const uint16_t *raw_frame, uint16_t *baseline_buff
  * @param y_values Reference values.
  * @param size Total number of sensor points in the grid.
  */
-void tactile_fit_curve(float *x_samples[3], float y_values[3], uint16_t size) {
+void tactile_fit_curve(uint16_t *x_samples[3], float y_values[3], uint16_t size) {
 	if (processing_config.curves == NULL || x_samples == NULL) {
 		return;
 	}
 	
 	for (uint16_t i = 0; i < size; ++i) {
-		float x[3] = { x_samples[0][i], x_samples[1][i], x_samples[2][i] };
+		float x[3] = { (float)x_samples[0][i], (float)x_samples[1][i], (float)x_samples[2][i] };
 		float y[3] = { y_values[0], y_values[1], y_values[2] };
 	
 		float det = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2]);
