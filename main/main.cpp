@@ -9,178 +9,295 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/gpio.h"
-#include "esp_log.h"
-#include "esp_rom_sys.h"
-#include "esp_adc/adc_oneshot.h"
+#include <stm32f4xx_hal.h>
 
 extern "C" {
 	#include "matrix_scan.h"
 	#include "tactile_proc.h"
 }
 
-static const char *TAG = "TactileSkin";
+SPI_HandleTypeDef hspi1; // CDC A
+SPI_HandleTypeDef hspi2; // CDC B
 
-matrix_config_t skin_config = {};
-proc_config_t proc_config = {};
+volatile uint8_t current_column = 0;
 
-adc_oneshot_unit_handle_t adc_handle;
-
-/**
- * @brief Map function to convert GPIO to ADC Channel.
- */
-adc_channel_t map_gpio_to_adc(uint8_t gpio_pin) {
-	switch (gpio_pin) {
-		case 36:
-			return ADC_CHANNEL_0;
-		case 37:
-			return ADC_CHANNEL_1;
-		case 38:
-			return ADC_CHANNEL_2;
-		case 39:
-			return ADC_CHANNEL_3;
-		case 32:
-			return ADC_CHANNEL_4;
-		case 33:
-			return ADC_CHANNEL_5;
-		case 34:
-			return ADC_CHANNEL_6;
-		case 35:
-			return ADC_CHANNEL_7;
-		default:
-			return (adc_channel_t)-1;
-	}
-}
+// Hardware Initialisation
+void SystemClock_Config(void);
+void MX_GPIO_Init(void);
+void MX_SPI1_Init(void);
+void MX_SPI2_Init(void);
 
 /**
- * @brief Logic called by matrix_scan.c to toggle pins.
+ * @brief Bridge function to set physical GPIO states.
  */
-void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
-	gpio_set_level((gpio_num_t)gpio_pin, state);
-}
-
-/**
- * @brief Generic analog GPIO read function.
- */
-uint16_t read_analog(uint8_t gpio_pin) {
-	int raw_out = 0;
+extern "C" void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
+	GPIO_PinState s = (state) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 	
-	adc_channel_t channel = map_gpio_to_adc(gpio_pin);
-	
-	if (channel != (adc_channel_t)-1) {
-		adc_oneshot_read(adc_handle, channel, &raw_out);
-	}
-	
-	return (uint16_t)raw_out;
+	if (gpio_pin == 0) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, s);
+	if (gpio_pin == 1) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, s);
+	if (gpio_pin == 2) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, s);
 }
 
 /**
- * @brief Bridge logic to retrieve data.
+ * @brief Bridge function to read two sensors at once.
  */
-uint16_t get_sensor_value(void) {
-	return read_analog(skin_config.analog_pins[0]);
+extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
+	uint16_t reg_addr = 0x00B + current_column;
+	uint16_t tx_command = 0xE000 | 0x0400 | reg_addr;
+	
+	// Read sensor A
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+	HAL_SPI_Transmit(&hspi1, &tx_command, 1, 10);
+	HAL_SPI_Receive(&hspi1, val_a, 1, 10);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+	
+	// Read sensor B
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET);
+	HAL_SPI_Transmit(&hspi2, &tx_command, 1, 10);
+	HAL_SPI_Receive(&hspi2, val_b, 1, 10);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET);
 }
 
 /**
- * @brief Bridge logic for delay.
+ * @brief Set the active CDC column channel for the matrix scanner.
+ * @param col_addr The column index requested by the library.
+ */
+extern "C" void set_cdc_channel(uint8_t col_addr) {
+	current_column = col_addr;
+}
+
+/**
+ * @brief Initialise the hardware DWT cycle counter for precision delays.
+ */
+void DWT_Delay_Init(void) {
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+/**
+ * @brief Microsecond delay block.
+ * @param us Number of microseconds to pause.
  */
 void delay_us(uint16_t us) {
-	esp_rom_delay_us(us);
+	uint32_t start_tick = DWT->CYCCNT;
+	
+	uint32_t target_ticks = (uint32_t)us * (SystemCoreClock / 1000000);
+	while ((DWT->CYCCNT - start_tick) < target_ticks);
 }
 
-uint16_t *sensor_data = NULL;
-uint16_t *baseline = NULL;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void app_main(void) {
-	ESP_LOGI(TAG, "Tactile Skin Initialising");
+int main(void) {
+	// Initialise STM32
+	HAL_Init();
+	SystemClock_Config();	
+	DWT_Delay_Init();
 	
-	// Initialise ADC Unit
-	adc_oneshot_unit_init_cfg_t init_config = {
-		.unit_id = ADC_UNIT_1,
-		.ulp_mode = ADC_ULP_MODE_DISABLE,
-	};
-	ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc_handle));
+	// Initialise peripheral ports
+	MX_GPIO_Init();
+	MX_SPI1_Init();
+	MX_SPI2_Init();
 	
-	// Initialise all Mux Select Pins as OUTPUT
+	// TODO: AD7142_Init();
+	
+	// Configure tactile geometry
+	matrix_config_t skin_config = {};
 	skin_config.num_row_addr_pins = 3;
-	skin_config.row_addr_pins[0] = 12;
-	skin_config.row_addr_pins[1] = 13;
-	skin_config.row_addr_pins[2] = 14;
-
-	skin_config.num_col_addr_pins = 3;
-	skin_config.col_addr_pins[0] = 25;
-	skin_config.col_addr_pins[1] = 26;
-	skin_config.col_addr_pins[2] = 27;
+	skin_config.num_col_addr_pins = 4;
+	skin_config.num_row_en_pins = 0;
+	skin_config.num_col_en_pins = 0;
 	
-	skin_config.num_analog_pins = 2;
-	skin_config.analog_pins[0] = 36;
-	skin_config.analog_pins[1] = 37;
+	skin_config.row_addr_pins[0] = 0;
+	skin_config.row_addr_pins[1] = 1;
+	skin_config.row_addr_pins[2] = 2;
 	
-	skin_config.settle_time_us = 10;
+	skin_config.set_row_func = set_mux_row;
+	skin_config.set_col_func = set_cdc_channel;
 	
 	matrix_init(&skin_config);
 	
-	adc_oneshot_chan_cfg_t adc_cfg = {
-		.bitwidth = ADC_BITWIDTH_DEFAULT,
-		.atten = ADC_ATTEN_DB_12,
-	};
+	// Configure signal processing parameters
+	curve_params_t skin_curves[128];
 	
-	for (int i = 0; i < skin_config.num_analog_pins; ++i) {
-		adc_channel_t channel = map_gpio_to_adc(skin_config.analog_pins[i]);
-		if (channel != (adc_channel_t)-1) {
-			ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, channel, &adc_cfg));
-		}
-	}
+	proc_config_t skin_proc = {};
+	// TODO: Assign actual values
+	skin_proc.noise_threshold = 50;
+	skin_proc.sensitivity = 100;
+	skin_proc.max_output = 4095;
+	skin_proc.curves = skin_curves;
 	
-	for (int i = 0; i < skin_config.num_row_addr_pins; ++i) {
-		gpio_reset_pin((gpio_num_t)skin_config.row_addr_pins[i]);
-		gpio_set_direction((gpio_num_t)skin_config.row_addr_pins[i], GPIO_MODE_OUTPUT);
-	}
+	tactile_proc_init(&skin_proc);
 	
-	for (int i = 0; i < skin_config.num_col_addr_pins; ++i) {
-		gpio_reset_pin((gpio_num_t)skin_config.col_addr_pins[i]);
-		gpio_set_direction((gpio_num_t)skin_config.col_addr_pins[i], GPIO_MODE_OUTPUT);
-	}
+	// Sensor calibration
+	uint16_t *weight_low = (uint16_t*)malloc(128 * sizeof(uint16_t));
+	uint16_t *weight_mid = (uint16_t*)malloc(128 * sizeof(uint16_t));
+	uint16_t *weight_high = (uint16_t*)malloc(128 * sizeof(uint16_t));
 	
-	// Memory Allocation
-	uint16_t grid_size = skin_config.active_rows * skin_config.active_cols;
+	// TODO: Handle prompting to user
 	
-	sensor_data = (uint16_t*)malloc(grid_size * sizeof(uint16_t));
-	baseline = (uint16_t*)malloc(grid_size * sizeof(uint16_t));
+	float y_targets[3] = { 0.0f, 100.0f, 500.0f };
+	uint16_t *x_samples[3] = { weight_low, weight_mid, weight_high };
+	tactile_fit_curve(x_samples, y_targets, 128);
 	
-	if (sensor_data == NULL || baseline == NULL) {
-		ESP_LOGE(TAG, "Fatal: Out of Memory");
-		return;
-	}
+	free(weight_low);
+	free(weight_mid);
+	free(weight_high);
 	
-	ESP_LOGI(TAG, "Grid Initialised: %dx%d", skin_config.active_rows, skin_config.active_cols);
+	// Frame buffers
+	uint16_t sensor_data[128] = {0};
+	uint16_t processed_data[128] = {0};
 	
-	tactile_proc_init(&proc_config);
-	
-	bool is_calibrated = false;
-	
-	// Main Loop
 	while (1) {
-		matrix_scan_grid(sensor_data);
-		
-		if (!is_calibrated) {
-			tactile_calibration(sensor_data, baseline, grid_size);
-			is_calibrated = true;
-			ESP_LOGI(TAG, "Calibration Complete");
-		}
-		
-		tactile_process_frame(sensor_data, baseline, sensor_data, grid_size);
-		
-		vTaskDelay(pdMS_TO_TICKS(50));
+		matrix_scan_parallel(sensor_data);
+		tactile_process_frame(sensor_data, processed_data, 128);
+		HAL_Delay(10);
 	}
 }
 
-#ifdef __cplusplus
+/**
+ * @brief Configure the system clock source and bus dividers.
+ */
+void SystemClock_Config(void) {
+	RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+	RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+	
+	// Enable power interface clock
+	__HAL_RCC_PWR_CLK_ENABLE();
+	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+	
+	// Set physical 25MHz external crystal as clock source
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+	
+	// Enable PLL
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;	
+	
+	// Multiplication math
+	RCC_OscInitStruct.PLL.PLLM = 25;
+	RCC_OscInitStruct.PLL.PLLN = 200;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	
+	// Physically apply configuration
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+		while(1);
+	}
+	
+	// Configure clock
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+									RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	
+	// Set dividers
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;	
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+	
+	// Physically apply configuration
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK) {
+		while(1);
+	}
 }
-#endif
+
+/**
+ * @brief Initialise GPIO pins.
+ */
+void MX_GPIO_Init(void) {
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	
+	// Enable internal clocks for GPIOA and GPIOB
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+	
+	// Set default starting states for MUX
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2, GPIO_PIN_RESET);
+	
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	
+	// Physically apply configuration
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	
+	// Set default starting states for CS
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_15, GPIO_PIN_SET);
+	
+	GPIO_InitStruct.Pin = GPIO_PIN_4 | GPIO_PIN_15;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	
+	// Physically apply configuration
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	// Configure INT
+	GPIO_InitStruct.Pin = GPIO_PIN_3;
+	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	
+	// Physically apply configuration
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	// Listen to interrupt channel
+	HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
+	HAL_NVIC_Enable(EXTI3_IRQn);
+}
+
+/**
+ * @brief Initialise SPI1 for CDC1.
+ */
+void MX_SPI1_Init(void) {
+	hspi1.Instance = SPI1;
+	
+	// Configuration for SPI
+	hspi1.Init.Mode = SPI_MODE_MASTER;
+	hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+	hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
+	hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+	hspi1.Init.NSS = SPI_NSS_SOFT;
+	
+	// Set speed limit
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+	
+	// Physically apply configuration
+	if (HAL_SPI_Init(&hspi1) != HAL_OK) {
+		while(1);
+	}
+}
+
+/**
+ * @brief Initialise SPI2 for CDC2.
+ */
+void MX_SPI2_Init(void) {
+	hspi2.Instance = SPI2;
+	
+	// Configuration for SPI
+	hspi2.Init.Mode = SPI_MODE_MASTER;
+	hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+	hspi2.Init.DataSize = SPI_DATASIZE_16BIT;
+	hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+	hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+	hspi2.Init.NSS = SPI_NSS_SOFT;
+	
+	// Set speed limit
+	hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+	hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+	hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+	hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+	
+	// Physically apply configuration
+	if (HAL_SPI_Init(&hspi2) != HAL_OK) {
+		while(1);
+	}
+}
+
+/**
+ * @brief System tick timer heartbeat.
+ */
+extern "C" void SysTick_Handler(void) {
+	HAL_IncTick();
+}
