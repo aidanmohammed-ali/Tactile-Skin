@@ -42,7 +42,7 @@ void tactile_zero_calibration(const uint16_t *raw_frame, uint16_t *baseline_buff
  * @param size Total number of sensor points in the grid.
  */
 void tactile_fit_curve(float *x_samples[3], float y_values[3], uint16_t size) {
-	if (processing_config == NULL || x_samples == NULL) {
+	if (processing_config.curves == NULL || x_samples == NULL) {
 		return;
 	}
 	
@@ -54,22 +54,22 @@ void tactile_fit_curve(float *x_samples[3], float y_values[3], uint16_t size) {
 	
 		// If Singular Default to Linear
 		if (det == 0.0f) {
-			processing_config->curves[i].a = 0.0f;
-			processing_config->curves[i].b = 1.0f;
-			processing_config->curves[i].c = 0.0f;
+			processing_config.curves[i].a = 0.0f;
+			processing_config.curves[i].b = 1.0f;
+			processing_config.curves[i].c = 0.0f;
 			continue;
 		}
 		
 		float inv_det = 1.0f / det;
-		processing_config->curves[i].a = ( (y[0] * (x[1] - x[2])) -
+		processing_config.curves[i].a = ( (y[0] * (x[1] - x[2])) -
 										   (y[1] * (x[0] - x[2])) +
 										   (y[2] * (x[0] - x[1]))) * inv_det;
 							   
-		processing_config->curves[i].b = (-(y[0] * (x[1] * x[1] - x[2] * x[2])) +
+		processing_config.curves[i].b = (-(y[0] * (x[1] * x[1] - x[2] * x[2])) +
 										   (y[1] * (x[0] * x[0] - x[2] * x[2])) -
 										   (y[2] * (x[0] * x[0] - x[1] * x[1]))) * inv_det;
 							   
-		processing_config->curves[i].c = ( (y[0] * (x[1] * x[1] * x[2] - x[2] * x[2] * x[1])) - 
+		processing_config.curves[i].c = ( (y[0] * (x[1] * x[1] * x[2] - x[2] * x[2] * x[1])) - 
 										   (y[1] * (x[0] * x[0] * x[2] - x[2] * x[2] * x[0])) +
 										   (y[2] * (x[0] * x[0] * x[1] - x[1] * x[1] * x[0]))) * inv_det;
 		}
