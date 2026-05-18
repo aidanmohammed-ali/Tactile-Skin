@@ -1,0 +1,7 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "AD7147ACPZ-1500RL7") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/AD7147ACPZ-1500RL7.kicad_sym") (options "") (descr ""))
+	(lib (name "customAD7142symbol") (type "KiCad") (uri "${KIPRJMOD}/customAD7142symbol.kicad_sym") (options "") (descr ""))
+	(lib (name "FH12-16S-0.5SH_55_") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/16pinfpc.pretty/FH12-16S-0.5SH_55_.kicad_sym") (options "") (descr ""))
+	(lib (name "FH12-8S-0.5SH_55_") (type "KiCad") (uri "${KIPRJMOD}/custom_libs/8pinfpc.pretty/FH12-8S-0.5SH_55_.kicad_sym") (options "") (descr ""))
+)
