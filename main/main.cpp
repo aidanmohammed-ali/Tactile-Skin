@@ -21,14 +21,25 @@ SPI_HandleTypeDef hspi2; // CDC B
 
 volatile uint8_t current_column = 0;
 
+/**
+ * @brief Structure to pair an AD7142 register address with its configuration value.
+ */
+typedef struct {
+	uint16_t reg_addr;
+	uint16_t reg_val;
+} ad7142_reg_config_t;
+
 // Hardware Initialisation
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
 void MX_SPI1_Init(void);
 void MX_SPI2_Init(void);
+void AD7142_Init(void);
 
 /**
  * @brief Bridge function to set physical GPIO states.
+ * @param gpio_pin Number of the pin being used.
+ * @param state Value being applied to the pin.
  */
 extern "C" void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
 	GPIO_PinState s = (state) ? GPIO_PIN_SET : GPIO_PIN_RESET;
@@ -39,11 +50,30 @@ extern "C" void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
 }
 
 /**
+ * @brief Helper function to write a 16-bit value to a specific AD7142 register.
+ * @param hspi Pointer to the SPI handler structure.
+ * @param cs_port Pointer to the GPIO port instance for Chip Select.
+ * @param cs_pin GPIO Pin number for Chip Select.
+ * @param reg_addr Target register address on the AD7142.
+ * @param data_val 16-bit data value to write to the register.
+ */
+void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t cs_pin, uint16_t reg_addr, uint16_t data_val) {
+	uint16_t tx_command = 0xE000 | (reg_addr & 0x03FF);
+	
+	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
+	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
+	HAL_SPI_Transmit(hspi, &data_val, 1, 10);
+	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
+}
+
+/**
  * @brief Bridge function to read two sensors at once.
+ * @param val_a Pointer to location of first value to be read.
+ * @param val_b Pointer to location of second value to be read.
  */
 extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	uint16_t reg_addr = 0x00B + current_column;
-	uint16_t tx_command = 0xE000 | 0x0400 | reg_addr;
+	uint16_t tx_command = 0xE400 | (reg_addr & 0x03FF);
 	
 	// Read sensor A
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
@@ -52,10 +82,10 @@ extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 	
 	// Read sensor B
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
 	HAL_SPI_Transmit(&hspi2, &tx_command, 1, 10);
 	HAL_SPI_Receive(&hspi2, val_b, 1, 10);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
 }
 
 /**
@@ -79,7 +109,7 @@ void DWT_Delay_Init(void) {
  * @brief Microsecond delay block.
  * @param us Number of microseconds to pause.
  */
-void delay_us(uint16_t us) {
+extern "C" void delay_us(uint16_t us) {
 	uint32_t start_tick = DWT->CYCCNT;
 	
 	uint32_t target_ticks = (uint32_t)us * (SystemCoreClock / 1000000);
@@ -97,7 +127,7 @@ int main(void) {
 	MX_SPI1_Init();
 	MX_SPI2_Init();
 	
-	// TODO: AD7142_Init();
+	AD7142_Init();
 	
 	// Configure tactile geometry
 	matrix_config_t skin_config = {};
@@ -292,6 +322,92 @@ void MX_SPI2_Init(void) {
 	// Physically apply configuration
 	if (HAL_SPI_Init(&hspi2) != HAL_OK) {
 		while(1);
+	}
+}
+
+/**
+ * @brief Initialise the AD7142.
+ */
+void AD7142_Init(void) {
+	// Bank 1
+	ad7142_reg_config_t bank1_table[] = {
+		{0x000, 0x0170}, // PWR_CONTROL
+		{0x001, 0x00FF}, // STAGE_CAL_EN
+		{0x002, 0x0FF0}, // AMB_COMP_CTRL0 (default)
+		{0x003, 0x0140}, // AMB_COMP_CTRL1 (default)
+		{0x004, 0xFFFF}, // AMB_COMP_CTRL2 (default)
+		{0x005, 0x0000}, // STAGE_LOW_INT_EN (default)
+		{0x006, 0x0000}, // STAGE_HIGH_INT_EN (default)
+		{0x007, 0x0080}  // STAGE_COMPLETE_INT_EN
+	};
+	
+	const int num_registers = sizeof(bank1_table) / sizeof(bank1_table[0]);
+	
+	for (int i = 0; i < num_registers; ++i) {
+		AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, bank1_table[i].reg_addr, bank1_table[i].reg_val);
+		AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, bank1_table[i].reg_addr, bank1_table[i].reg_val);
+	}
+	
+	// Bank 2
+	uint16_t used_reg_vals[] = {
+		0x0001, // STAGEx_CONNECTION[6:0]
+		0x4000, // STAGEx_CONNECTION[13:7]
+		0x0000, // STAGEx_AFE_OFFSET
+		0x2424, // STAGEx_SENSITIVITY
+		0x0640, // STAGEx_OFFSET_LOW
+		0x0640, // STAGEx_OFFSET_HIGH
+		0x07D0, // STAGEx_OFFSET_HIGH_CLAMP
+		0x07D0  // STAGEx_OFFSET_LOW_CLAMP
+	};
+	
+	uint16_t unused_reg_vals[] = {
+		0x3FFF, // STAGEx_CONNECTION[6:0]
+		0xFFFF, // STAGEx_CONNECTION[13:7]
+		0x0000, // STAGEx_AFE_OFFSET
+		0x0000, // STAGEx_SENSITIVITY
+		0x0000, // STAGEx_OFFSET_LOW
+		0x0000, // STAGEx_OFFSET_HIGH
+		0x0000, // STAGEx_OFFSET_HIGH_CLAMP
+		0x0000  // STAGEx_OFFSET_LOW_CLAMP
+	};
+	
+	int stage = 0;
+	for (uint16_t addr = 0x080; addr < 0x0E0; ) {
+		for (uint16_t i = 0; i < 8; ++i) {
+			if (stage < 8) {
+				uint16_t val;
+				
+				switch (i) {
+					case 0:
+						val = 0x3FFF ^ (used_reg_vals[i] << (2 * stage));
+						val = 0x3FFF & val;
+						break;
+						
+					case 1:
+						val = 0x3FFF ^ (used_reg_vals[i] >> (2 * stage));
+						val = 0x3FFE | val;
+						val = 0x3FFF & val;
+						break;
+						
+					case 2:
+					case 3:						
+					case 4:
+					case 5:
+					case 6:
+					case 7:
+						val = used_reg_vals[i];
+						break;
+				}
+
+				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val);
+				AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, val);
+			} else {
+				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, unused_reg_vals[i]);
+				AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, unused_reg_vals[i]);
+			}
+			addr++;
+		}
+		stage++;
 	}
 }
 
