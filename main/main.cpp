@@ -20,6 +20,7 @@ SPI_HandleTypeDef hspi1; // CDC A
 SPI_HandleTypeDef hspi2; // CDC B
 
 volatile uint8_t current_column = 0;
+volatile uint8_t cdc_conversion_complete = 0;
 
 /**
  * @brief Structure to pair an AD7142 register address with its configuration value.
@@ -35,6 +36,7 @@ void MX_GPIO_Init(void);
 void MX_SPI1_Init(void);
 void MX_SPI2_Init(void);
 void AD7142_Init(void);
+void Clear_CDC_Interrupts(void);
 
 /**
  * @brief Bridge function to set physical GPIO states.
@@ -64,6 +66,25 @@ void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t c
 	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
 	HAL_SPI_Transmit(hspi, &data_val, 1, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
+}
+
+/**
+ * @brief Helper function to read a 16-bit value from a specific AD7142 register.
+ * @param hspi Pointer to the SPI handler structure.
+ * @param cs_port Pointer to the GPIO port instance for Chip Select.
+ * @param cs_pin GPIO Pin number for Chip Select.
+ * @param reg_addr Target register address on the AD7142.
+ */
+uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t cs_pin, uint16_t reg_addr) {
+	uint16_t tx_command = 0xE400 | (reg_addr & 0x03FF);
+	uint16_t rx_val = 0;
+	
+	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
+	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
+	HAL_SPI_Receive(hspi, &rx_val, 1, 10);
+	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
+	
+	return rx_val;
 }
 
 /**
@@ -116,6 +137,39 @@ extern "C" void delay_us(uint16_t us) {
 	while ((DWT->CYCCNT - start_tick) < target_ticks);
 }
 
+/**
+ * @brief Scan the tactile matrix multiple times and saves the averaged data.
+ * @param buffer Pointer to the calibration destination array.
+ * @param num_averages Number of frame to average (use power of 2).
+ */
+void capture_calibration_frame(uint16_t *buffer, uint8_t num_averages) {
+	// Clear buffer
+	for (int i = 0; i < 128; ++i) {
+		buffer[i] = 0;
+	}
+	
+	// Allocate temporary buffers
+	uint32_t *accumulator = (uint32_t*)calloc(128, sizeof(uint32_t));
+	uint16_t *single_frame = (uint16_t*)malloc(128 * sizeof(uint16_t));
+	
+	// Scan matrix
+	for (uint8_t i = 0; i < num_averages; ++i) {
+		matrix_scan_parallel(single_frame);
+		for (int j = 0; j < 128; ++j) {
+			accumulator[j] += single_frame[j];
+		}
+		HAL_Delay(5);
+	}
+	
+	// Compute average
+	for (int i = 0; i < 128; ++i) {
+		buffer[i] = (uint16_t)(accumulator[i] / num_averages);
+	}
+	
+	free(accumulator);
+	free(single_frame);
+}
+
 int main(void) {
 	// Initialise STM32
 	HAL_Init();
@@ -162,7 +216,14 @@ int main(void) {
 	uint16_t *weight_mid = (uint16_t*)malloc(128 * sizeof(uint16_t));
 	uint16_t *weight_high = (uint16_t*)malloc(128 * sizeof(uint16_t));
 	
-	// TODO: Handle prompting to user
+	HAL_Delay(3000);
+	capture_calibration_frame(weight_low, 16);
+	
+	HAL_Delay(5000);
+	capture_calibration_frame(weight_mid, 16);
+	
+	HAL_Delay(5000);
+	capture_calibration_frame(weight_high, 16);
 	
 	float y_targets[3] = { 0.0f, 100.0f, 500.0f };
 	uint16_t *x_samples[3] = { weight_low, weight_mid, weight_high };
@@ -176,10 +237,38 @@ int main(void) {
 	uint16_t sensor_data[128] = {0};
 	uint16_t processed_data[128] = {0};
 	
+	// Clear initial startup triggers
+	Clear_CDC_Interrupts();
+	cdc_conversion_complete = 0;
+	
 	while (1) {
+		while (cdc_conversion_complete == 0) {
+			// Idle until callback
+		}
+		
+		// Ensure both CDCs are fully done converting
+		uint8_t cdc_a_done = 0;
+		uint8_t cdc_b_done = 0;
+		
+		while (!cdc_a_done || !cdc_b_done) {
+			if (!cdc_a_done) {
+				uint16_t status_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x00A);
+				if (status_a & 0x0080) {
+					cdc_a_done = 1;
+				}
+			}
+			if (!cdc_b_done) {
+				uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
+				if (status_b & 0x0080) {
+					cdc_b_done = 1;
+				}
+			}
+		}
+		
+		cdc_conversion_complete = 0;
+		
 		matrix_scan_parallel(sensor_data);
 		tactile_process_frame(sensor_data, processed_data, 128);
-		HAL_Delay(10);
 	}
 }
 
@@ -412,8 +501,36 @@ void AD7142_Init(void) {
 }
 
 /**
+ * @brief Reads the completion status register on both CDCs to clear.
+ */
+void Clear_CDC_Interrupts(void) {
+	uint16_t status_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x00A);
+	uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
+	
+	(void)status_a;
+	(void)status_b;
+}
+
+/**
  * @brief System tick timer heartbeat.
  */
 extern "C" void SysTick_Handler(void) {
 	HAL_IncTick();
+}
+
+/**
+ * @brief Hardware Interrupt Vector for EXTI Line 3.
+ */
+extern "C" void EXTI3_IRQHandler(void) {
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3);
+}
+
+/**
+ * @brief STM32 External Interrupt Callback hook.
+ * @param Interrupt GPIO Pin.
+ */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if (GPIO_Pin == GPIO_PIN_3) {
+		cdc_conversion_complete = 1;
+	}
 }
