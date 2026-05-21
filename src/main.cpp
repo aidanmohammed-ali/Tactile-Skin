@@ -291,10 +291,11 @@ void SystemClock_Config(void) {
 	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
 	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;	
 	
-	// Multiplication math
+	// Multiplication math (96MHz clock)
 	RCC_OscInitStruct.PLL.PLLM = 25;
-	RCC_OscInitStruct.PLL.PLLN = 200;
+	RCC_OscInitStruct.PLL.PLLN = 192;
 	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	RCC_OscInitStruct.PLL.PLLQ = 4;
 	
 	// Physically apply configuration
 	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
@@ -356,6 +357,26 @@ void MX_GPIO_Init(void) {
 	
 	// Physically apply configuration
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	// Configure SPI1 hardware
+	GPIO_InitStruct.Pin = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
+	
+	// Physically apply configuration
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	// Configure SPI2 hardware
+	GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
+	
+	// Physically apply configuration
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 	
 	// Listen to interrupt channel
 	HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
