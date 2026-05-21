@@ -50,7 +50,7 @@ void tactile_zero_calibration(const uint16_t *raw_frame, uint16_t *baseline_buff
  * @param y_values Reference values.
  * @param size Total number of sensor points in the grid.
  */
-void tactile_fit_curve(float *x_samples[3], float y_values[3], uint16_t size);
+void tactile_fit_curve(uint16_t *x_samples[3], float y_values[3], uint16_t size);
 
 /**
  * @brief Process a raw frame into clean pressure data.
