@@ -3,7 +3,6 @@
  * @author Aidan Mohammed-Ali
  * @brief Hardware-specific implementation for tactile skin.
  * * This file acts as the Hardware Driver Layer.
- * @version 0.1
  * @date 2026-04-29
  */
 

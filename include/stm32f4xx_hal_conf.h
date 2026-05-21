@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
-  * @file    stm32f4xx_hal_conf_template.h
+  * @file    stm32f4xx_hal_conf.h
   * @author  MCD Application Team
-  * @brief   HAL configuration template file. 
-  *          This file should be copied to the application folder and renamed
-  *          to stm32f4xx_hal_conf.h.
+  * @brief   HAL configuration file.
+  *          This file was initialised from the vendor template and customised
+  *          specifically to meet the tactile skin application needs.
   ******************************************************************************
   * @attention
   *
@@ -15,6 +15,11 @@
   * in the root directory of this software component.
   * If no LICENSE file comes with this software, it is provided AS-IS.
   *
+  ******************************************************************************
+  * @note Project Customisations
+  * - Target Hardware: BlackPill Development Board, STM32F411
+  * - Modified By: Aidan Mohammed-Ali
+  * - Modification Date: 2026-05-21
   ******************************************************************************
   */ 
 

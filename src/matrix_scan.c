@@ -2,7 +2,6 @@
  * @file matrix_scan.c
  * @author Aidan Mohammed-Ali
  * @brief High-speed scanning logic for tactile skin.
- * @version 0.1
  * @date 2026-04-29
  */
 
