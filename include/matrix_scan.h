@@ -84,6 +84,7 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state);
 
 /**
  * @brief Bridge function to read physical analog pins.
+ * @retval 16-bit value read from analog pins.
  */
 uint16_t read_analog(void);
 
