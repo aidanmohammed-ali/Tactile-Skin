@@ -8,7 +8,13 @@ This project focuses on creating a thin, flexible tactile skin that measures mec
 * **Goal:**
 
 ## Repository Structure
-* `/main`: Main firmware
+
+### Firmware
+* `/src`: Main firmware source files (`.c` & `.cpp`).
+* `/include`: Global header files (`.h`).
+* `platformio.ini`: The core PlatformIO configuration script.
+
+### Hardware
 
 ## Contribution Guidelines
 
@@ -19,3 +25,4 @@ Use **Conventional Commits**. Start every commit message with one of these:
 * **`Docs:`** Documentation changes or code comments (e.g., `Docs: update README`).
 * **`Feat:`** New features or logic (e.g., `Feat: implementation of scan loop`).
 * **`Fix:`** Bug fixes (e.g., `Fix: corrected index overflow`).
+* **`Chore:`** Maintenance tasks, library imports, or project scaffolding (e.g., `Chore: import USB core libraries`).
