@@ -29,7 +29,7 @@ typedef struct {
 	uint16_t reg_val;
 } ad7142_reg_config_t;
 
-// Hardware Initialisation
+// Hardware initialisation
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
 void MX_SPI1_Init(void);
@@ -73,6 +73,7 @@ void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t c
  * @param cs_port Pointer to the GPIO port instance for Chip Select.
  * @param cs_pin GPIO Pin number for Chip Select.
  * @param reg_addr Target register address on the AD7142.
+ * @retval Value read from the AD7142 register.
  */
 uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t cs_pin, uint16_t reg_addr) {
 	uint16_t tx_command = 0xE400 | (reg_addr & 0x03FF);
