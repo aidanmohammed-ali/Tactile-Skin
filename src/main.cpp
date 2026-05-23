@@ -11,8 +11,15 @@
 #include <stm32f4xx_hal.h>
 
 extern "C" {
+	#include "usbd_core.h"
+	#include "usbd_cdc.h"
+	
 	#include "matrix_scan.h"
 	#include "tactile_proc.h"
+	
+	extern USBD_HandleTypeDef hUsbDeviceFS;
+	extern USBD_DescriptorsTypeDef FS_Desc;
+	extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
 }
 
 SPI_HandleTypeDef hspi1; // CDC A
@@ -183,6 +190,12 @@ int main(void) {
 	
 	AD7142_Init();
 	
+	// Initialise and start the native USB CDC Virtual COM Port stack
+	USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS);
+	USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC_CLASS);
+	USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS);
+	USBD_Start(&hUsbDeviceFS);
+	
 	// Configure tactile geometry
 	matrix_config_t skin_config = {};
 	skin_config.num_row_addr_pins = 3;
@@ -269,6 +282,9 @@ int main(void) {
 		
 		matrix_scan_parallel(sensor_data);
 		tactile_process_frame(sensor_data, processed_data, 128);
+		
+		USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)processed_data, 256);
+		USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 	}
 }
 
@@ -553,5 +569,16 @@ extern "C" void EXTI3_IRQHandler(void) {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_3) {
 		cdc_conversion_complete = 1;
+	}
+}
+
+/**
+ * @brief Hardware Interrupt Vector for the USB On-The-Go Full Speed peripheral channel.
+ */
+extern "C" {
+	extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
+	
+	void OTG_FS_IRQHandler(void) {
+		HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
 	}
 }
