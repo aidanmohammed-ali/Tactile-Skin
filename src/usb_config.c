@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include "usbd_core.h"
 #include "usbd_cdc.h"
+#include "usbd_conf.h"
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 USBD_HandleTypeDef hUsbDeviceFS;
@@ -180,7 +181,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd) {
  */
 static int8_t CDC_Init_FS(void) {
 	USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
-	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS, sizeof(UserRxBufferFS));
+	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
 	return (USBD_OK);
 }
 
@@ -235,7 +236,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length) {
  * @retval USBD_OK if processing succeeded.
  */
 static int8_t CDC_Receive_FS(uint8_t *pbuf, uint32_t *len) {
-	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &pbuf[0], sizeof(UserRxBufferFS));
+	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, pbuf);
 	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 	return (USBD_OK);
 }
@@ -247,3 +248,270 @@ USBD_CDC_ItfTypeDef USBD_Interface_fops_FS = {
 	CDC_Control_FS,
 	CDC_Receive_FS
 };
+
+/**
+ * @defgroup USB_LL_Interface Low-Level Link Layer Interface
+ * @brief Hardware routing functions binding the ST USB Stack to STM32 HAL peripheral drivers.
+ * @{
+ */
+
+/**
+ * @brief Initialise the low-level hardware peripheral controller driver (PCD).
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @retval USBD_OK if peripheral is up, USBD_FAIL otherwise.
+ */
+USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev) {
+	hpcd_USB_OTG_FS.pData = pdev;
+	pdev->pData = &hpcd_USB_OTG_FS;
+	
+	hpcd_USB_OTG_FS.Instance = USB_OTG_FS;
+	hpcd_USB_OTG_FS.Init.dev_endpoints = 4;
+	hpcd_USB_OTG_FS.Init.speed = PCD_SPEED_FULL;
+	hpcd_USB_OTG_FS.Init.dma_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
+	hpcd_USB_OTG_FS.Init.Sof_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.low_power_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.vbus_sensing_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.use_dedicated_ep1 = DISABLE;
+	
+	if (HAL_PCD_Init(&hpcd_USB_OTG_FS) != HAL_OK) {
+		return USBD_FAIL;
+	}
+	
+	HAL_PCDEx_SetRxFiFo(&hpcd_USB_OTG_FS, 128);
+	HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 0, 64);
+	HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 1, 128);
+	HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 2, 64);
+	
+	return USBD_OK;
+}
+
+/**
+ * @brief De-initialise the low-level hardware peripheral controller driver.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev) {
+	HAL_PCD_DeInit((PCD_HandleTypeDef*)pdev->pData);
+	return USBD_OK;
+}
+
+/**
+ * @brief Start the low-level USB hardware driver.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev) {
+	HAL_PCD_Start((PCD_HandleTypeDef*)pdev->pData);
+	return USBD_OK;
+}
+
+/**
+ * @brief Stop the low-level USB hardware driver.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_Stop(USBD_HandleTypeDef *pdev) {
+	HAL_PCD_Stop((PCD_HandleTypeDef*)pdev->pData);
+	return USBD_OK;
+}
+
+/**
+ * @brief Open a designated USB endpoint device channel for structural transactions
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Hardware physical endpoint address index.
+ * @param ep_type Selected transaction profile token (Control, Bulk, Interrupt).
+ * @param ep_mps Maximum Packet Size bounds in total raw bytes.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_OpenEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps) {
+	HAL_PCD_EP_Open((PCD_HandleTypeDef*)pdev->pData, ep_addr, ep_mps, ep_type);
+	return USBD_OK;
+}
+
+/**
+ * @brief Closes a designated USB endpoint device channel.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Hardware physical endpoint address index.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_CloseEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
+	HAL_PCD_EP_Close((PCD_HandleTypeDef*)pdev->pData, ep_addr);
+	return USBD_OK;
+}
+
+/**
+ * @brief Flushes pending transaction data buffer inside a designated hardware endpoint FIFO.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Hardware physical endpoint address index.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_FlushEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
+	HAL_PCD_EP_Flush((PCD_HandleTypeDef*)pdev->pData, ep_addr);
+	return USBD_OK;
+}
+
+/**
+ * @brief Activates a hardware stall condition on a target endpoint channel.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Hardware physical endpoint address index.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_StallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
+	HAL_PCD_EP_SetStall((PCD_HandleTypeDef*)pdev->pData, ep_addr);
+	return USBD_OK;
+}
+
+/**
+ * @brief Clears an activate hardware stall condition on a target endpoint channel.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Hardware physical endpoint address index.
+ * @retval Always return USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_ClearStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
+	HAL_PCD_EP_ClrStall((PCD_HandleTypeDef*)pdev->pData, ep_addr);
+	return USBD_OK;
+}
+
+/**
+ * @brief Evaluates if a specific hardware endpoint is currently stalled.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Hardware physical endpoint address index.
+ * @retval Returns 1 if stalled, 0 if operational.
+ */
+uint8_t USBD_LL_IsStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
+	PCD_HandleTypeDef *hpcd = (PCD_HandleTypeDef*)pdev->pData;
+	if ((ep_addr & 0x80) == 0x80) {
+		return hpcd->IN_ep[ep_addr & 0x7F].is_stall;
+	} else {
+		return hpcd->OUT_ep[ep_addr & 0x7F].is_stall;
+	}
+}
+
+/**
+ * @brief Programs the assigned device network address into the internal USB hardware peripheral.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param dev_addr Network enumeration address assigned by host controller.
+ * @retval Always returns USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_addr) {
+	HAL_PCD_SetAddress((PCD_HandleTypeDef*)pdev->pData, dev_addr);
+	return USBD_OK;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+/**
+ * @brief Initiates an asynchronous data packet transmission sequence on an IN hardware endpoint channel.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Target physical IN endpoint address index.
+ * @param pbuf Pointer to the source memory buffer holding the raw byte array payload.
+ * @param size Total length of payload packet boundary constraints in bytes.
+ * @retval Always returns USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint32_t size) {
+	HAL_PCD_EP_Transmit((PCD_HandleTypeDef*)pdev->pData, ep_addr, pbuf, size);
+	return USBD_OK;
+}
+
+/**
+ * @brief Configures and prepares an OUT hardware endpoint channel block buffer to receive incoming packets.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Target physical OUT endpoint address index.
+ * @param pbuf Pointer to target destination buffer allocated in system memory RAM.
+ * @param size Maximum incoming transfer packet allocation bounds in bytes.
+ * @retval Always returns USBD_OK.
+ */
+USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint32_t size) {
+	HAL_PCD_EP_Receive((PCD_HandleTypeDef*)pdev->pData, ep_addr, pbuf, size);
+	return USBD_OK;
+}
+
+/**
+ * @brief Returns the total count of received bytes pulled off the wire into an OUT endpoint buffer channel.
+ * @param pdev Device handle instance mapping the core USB stack.
+ * @param ep_addr Target physical OUT endpoint address index.
+ * @retval Total packet load count read from peripheral driver status registers.
+ */
+uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
+	return HAL_PCD_EP_GetRxCount((PCD_HandleTypeDef*)pdev->pData, ep_addr);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when a SETUP packet is captured on Endpoint 0.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_SetupStage((USBD_HandleTypeDef*)hpcd->pData, (uint8_t*)hpcd->Setup);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when an OUT channel transaction completes.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ * @param Active target physical endpoint identifier channel index.
+ */
+void HAL_PCD_DataOutStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum) {
+	USBD_LL_DataOutStage((USBD_HandleTypeDef*)hpcd->pData, epnum, hpcd->OUT_ep[epnum].xfer_buff);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when an IN channel transaction finishes clearing FIFO buffers.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ * @param Active target physical endpoint identifier channel index.
+ */
+void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum) {
+	USBD_LL_DataInStage((USBD_HandleTypeDef*)hpcd->pData, epnum, hpcd->IN_ep[epnum].xfer_buff);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware upon capturing a Start of Frame (SOF) packet sequence.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_SOFCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_SOF((USBD_HandleTypeDef*)hpcd->pData);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when a bus reset state condition is encountered.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_SetSpeed((USBD_HandleTypeDef*)hpcd->pData, USBD_SPEED_FULL);
+	USBD_LL_Reset((USBD_HandleTypeDef*)hpcd->pData);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when a USB suspend bus state becomes active.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_Suspend((USBD_HandleTypeDef*)hpcd->pData);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when a host resume signal is asserted on the bus lines.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_Resume((USBD_HandleTypeDef*)hpcd->pData);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when connection to the host is physically negotiated.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_DevConnected((USBD_HandleTypeDef*)hpcd->pData);
+}
+
+/**
+ * @brief Event hook triggered by peripheral controller hardware when the physical USB cable connection is severed.
+ * @param hpcd Hardware peripheral driver context structure tracking low-level controller registers.
+ */
+void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd) {
+	USBD_LL_DevDisconnected((USBD_HandleTypeDef*)hpcd->pData);
+}
+
+/**
+ * @}
+ */

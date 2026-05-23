@@ -69,8 +69,8 @@ void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t c
 	uint16_t tx_command = 0xE000 | (reg_addr & 0x03FF);
 	
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
-	HAL_SPI_Transmit(hspi, &data_val, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)&data_val, 1, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
 }
 
@@ -87,8 +87,8 @@ uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_
 	uint16_t rx_val = 0;
 	
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
-	HAL_SPI_Receive(hspi, &rx_val, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Receive(hspi, (uint8_t*)&rx_val, 1, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
 	
 	return rx_val;
@@ -105,14 +105,14 @@ extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	
 	// Read sensor A
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi1, &tx_command, 1, 10);
-	HAL_SPI_Receive(&hspi1, val_a, 1, 10);
+	HAL_SPI_Transmit(&hspi1, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Receive(&hspi1, (uint8_t*)val_a, 1, 10);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 	
 	// Read sensor B
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi2, &tx_command, 1, 10);
-	HAL_SPI_Receive(&hspi2, val_b, 1, 10);
+	HAL_SPI_Transmit(&hspi2, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Receive(&hspi2, (uint8_t*)val_b, 1, 10);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
 }
 
@@ -191,8 +191,8 @@ int main(void) {
 	AD7142_Init();
 	
 	// Initialise and start the native USB CDC Virtual COM Port stack
-	USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS);
-	USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC_CLASS);
+	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
+	USBD_RegisterClass(&hUsbDeviceFS, USBD_CDC_CLASS);
 	USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS);
 	USBD_Start(&hUsbDeviceFS);
 	
@@ -396,7 +396,7 @@ void MX_GPIO_Init(void) {
 	
 	// Listen to interrupt channel
 	HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
-	HAL_NVIC_Enable(EXTI3_IRQn);
+	HAL_NVIC_EnableIRQ(EXTI3_IRQn);
 }
 
 /**
