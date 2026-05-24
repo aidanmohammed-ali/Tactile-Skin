@@ -28,7 +28,7 @@
 // Geometry configuration 
 const int ROWS = 8;
 const int COLS = 16;
-const int CELL_SIZE = 200;
+const int CELL_SIZE = 150;
 const int WINDOW_WIDTH = COLS * CELL_SIZE;
 const int WINDOW_HEIGHT = ROWS * CELL_SIZE;
 
@@ -193,13 +193,22 @@ int main() {
 		if (hardware_online) {
 			ReadSerialFrame(serial, current_frame);
 		} else {
-			simulation_time += GetFrameTime() * 2.0f;
+			// Simulation Mode
+			simulation_time += GetFrameTime();
+			
+			float target_c = 7.5f + std::sin(simulation_time * 1.2f) * 5.0f;
+			float target_r = 3.5f + std::cos(simulation_time * 0.8f) * 2.5f;
+			
 			for (int r = 0; r < ROWS; ++r) {
 				for (int c = 0; c < COLS; ++c) {
-					float dist = std::sqrt((r - 3.5f) * (r - 3.5f) + (c - 7.5f) * (c - 7.5f));
-					float wave = std::sin(dist - simulation_time) * 0.5f + 0.5f;
+					float dr = r - target_r;
+					float dc = c - target_c;
+					float distance_squared = (dr * dr) + (dc * dc);
 					
-					current_frame.channels[r * COLS + c] = static_cast<uint16_t>(wave * 3000.0f);
+					// Gaussian distribution
+					float intensity_curve = std::exp(-distance_squared / 3.5f);
+					
+					current_frame.channels[r * COLS + c] = static_cast<uint16_t>(intensity_curve * 4000.0f);
 				}
 			}
 		}
@@ -217,7 +226,10 @@ int main() {
 				
 				uint8_t intensity = (raw_val * 255) / 4095;
 				
-				Color cell_color = { intensity, 0, 0, 255 };
+				uint8_t red_channel = intensity;
+				uint8_t green_channel = 255 - intensity;
+				
+				Color cell_color = { red_channel, green_channel, 0, 255 };
 				
 				DrawRectangle(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
 			}
