@@ -2,7 +2,6 @@
  * @file matrix_scan.h
  * @author Aidan Mohammed-Ali
  * @brief High-speed scanning logic for tactile skin.
- * @version 0.1
  * @date 2026-04-29
  */
 
@@ -85,6 +84,7 @@ void set_gpio_state(uint8_t gpio_pin, uint8_t state);
 
 /**
  * @brief Bridge function to read physical analog pins.
+ * @retval 16-bit value read from analog pins.
  */
 uint16_t read_analog(void);
 

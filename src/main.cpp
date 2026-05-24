@@ -3,7 +3,6 @@
  * @author Aidan Mohammed-Ali
  * @brief Hardware-specific implementation for tactile skin.
  * * This file acts as the Hardware Driver Layer.
- * @version 0.1
  * @date 2026-04-29
  */
 
@@ -12,8 +11,15 @@
 #include <stm32f4xx_hal.h>
 
 extern "C" {
+	#include "usbd_core.h"
+	#include "usbd_cdc.h"
+	
 	#include "matrix_scan.h"
 	#include "tactile_proc.h"
+	
+	extern USBD_HandleTypeDef hUsbDeviceFS;
+	extern USBD_DescriptorsTypeDef FS_Desc;
+	extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
 }
 
 SPI_HandleTypeDef hspi1; // CDC A
@@ -30,7 +36,7 @@ typedef struct {
 	uint16_t reg_val;
 } ad7142_reg_config_t;
 
-// Hardware Initialisation
+// Hardware initialisation
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
 void MX_SPI1_Init(void);
@@ -63,8 +69,8 @@ void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t c
 	uint16_t tx_command = 0xE000 | (reg_addr & 0x03FF);
 	
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
-	HAL_SPI_Transmit(hspi, &data_val, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)&data_val, 1, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
 }
 
@@ -74,14 +80,15 @@ void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t c
  * @param cs_port Pointer to the GPIO port instance for Chip Select.
  * @param cs_pin GPIO Pin number for Chip Select.
  * @param reg_addr Target register address on the AD7142.
+ * @retval Value read from the AD7142 register.
  */
 uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t cs_pin, uint16_t reg_addr) {
 	uint16_t tx_command = 0xE400 | (reg_addr & 0x03FF);
 	uint16_t rx_val = 0;
 	
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(hspi, &tx_command, 1, 10);
-	HAL_SPI_Receive(hspi, &rx_val, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Receive(hspi, (uint8_t*)&rx_val, 1, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
 	
 	return rx_val;
@@ -98,14 +105,14 @@ extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	
 	// Read sensor A
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi1, &tx_command, 1, 10);
-	HAL_SPI_Receive(&hspi1, val_a, 1, 10);
+	HAL_SPI_Transmit(&hspi1, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Receive(&hspi1, (uint8_t*)val_a, 1, 10);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 	
 	// Read sensor B
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi2, &tx_command, 1, 10);
-	HAL_SPI_Receive(&hspi2, val_b, 1, 10);
+	HAL_SPI_Transmit(&hspi2, (uint8_t*)&tx_command, 1, 10);
+	HAL_SPI_Receive(&hspi2, (uint8_t*)val_b, 1, 10);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
 }
 
@@ -182,6 +189,12 @@ int main(void) {
 	MX_SPI2_Init();
 	
 	AD7142_Init();
+	
+	// Initialise and start the native USB CDC Virtual COM Port stack
+	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
+	USBD_RegisterClass(&hUsbDeviceFS, USBD_CDC_CLASS);
+	USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS);
+	USBD_Start(&hUsbDeviceFS);
 	
 	// Configure tactile geometry
 	matrix_config_t skin_config = {};
@@ -269,6 +282,9 @@ int main(void) {
 		
 		matrix_scan_parallel(sensor_data);
 		tactile_process_frame(sensor_data, processed_data, 128);
+		
+		USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)processed_data, 256);
+		USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 	}
 }
 
@@ -380,7 +396,7 @@ void MX_GPIO_Init(void) {
 	
 	// Listen to interrupt channel
 	HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
-	HAL_NVIC_Enable(EXTI3_IRQn);
+	HAL_NVIC_EnableIRQ(EXTI3_IRQn);
 }
 
 /**
@@ -553,5 +569,16 @@ extern "C" void EXTI3_IRQHandler(void) {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_3) {
 		cdc_conversion_complete = 1;
+	}
+}
+
+/**
+ * @brief Hardware Interrupt Vector for the USB On-The-Go Full Speed peripheral channel.
+ */
+extern "C" {
+	extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
+	
+	void OTG_FS_IRQHandler(void) {
+		HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
 	}
 }

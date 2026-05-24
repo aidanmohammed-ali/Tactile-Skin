@@ -2,7 +2,6 @@
  * @file tactile_proc.c
  * @author Aidan Mohammed-Ali
  * @brief Signal processing logic for tactile skin.
- * @version 0.1
  * @date 2026-05-01
  */
 
