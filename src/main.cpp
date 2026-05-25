@@ -27,6 +27,9 @@ SPI_HandleTypeDef hspi2; // CDC B
 
 volatile uint8_t current_column = 0;
 volatile uint8_t cdc_conversion_complete = 0;
+volatile uint8_t incoming_cal_cmd = 0x00;
+
+int8_t (*original_st_receive_func)(uint8_t*, uint32_t*) = NULL;
 
 /**
  * @brief Structure to pair an AD7142 register address with its configuration value.
@@ -177,6 +180,71 @@ void capture_calibration_frame(uint16_t *buffer, uint8_t num_averages) {
 	free(single_frame);
 }
 
+/**
+ * @brief Custom intercept hook that captures wizard tokens.
+ * @param buf Pointer to the raw incoming USB Virtual COM Port data payload buffer.
+ * @param len Pointer to the 32-bit unsigned integer tracking the received packet length in bytes.
+ * @retval USBD_OK if the data was successfully passed down to the handler, otherwise error code.
+ */
+int8_t Custom_USB_Intercept(uint8_t *buf, uint32_t *len) {
+	if (*len == 1) {
+		incoming_cal_cmd = buf[0];
+	}
+	
+	if (original_st_receive_func != NULL) {
+		return original_st_receive_func(buf, len);
+	}
+	return USBD_OK;
+}
+
+/**
+ * @brief Traps the MCU until a specific validation byte arrives from the visualiser.
+ * @param expected_byte The exact character payload.
+ */
+void Wait_For_Visualiser_Token(uint8_t expected_byte) {
+	while (1) {
+		if (incoming_cal_cmd == expected_byte) {
+			incoming_cal_cmd = 0x00;
+			break;
+		}
+		HAL_Delay(1);
+	}
+}
+
+/**
+ * @brief Execute the full curve fitting calibration sequence.
+ * @note This blocks normal matrix streaming until all three weight phases complete.
+ */
+void Run_Matrix_Calibration(void) {
+	// Allocate local sampling buffers
+	uint16_t *weight_low = (uint16_t*)malloc(128 * sizeof(uint16_t));
+	uint16_t *weight_mid = (uint16_t*)malloc(128 * sizeof(uint16_t));
+	uint16_t *weight_high = (uint16_t*)malloc(128 * sizeof(uint16_t));
+	
+	// Trap and sample each stage dynamically
+	Wait_For_Visualiser_Token(0x10);
+	incoming_cal_cmd = 0x00;
+	capture_calibration_frame(weight_low, 16);
+	
+	Wait_For_Visualiser_Token(0x11);
+	incoming_cal_cmd = 0x00;
+	capture_calibration_frame(weight_mid, 16);
+	
+	Wait_For_Visualiser_Token(0x12);
+	incoming_cal_cmd = 0x00;
+	capture_calibration_frame(weight_high, 16);
+	
+	// Compute curve parameters globally
+	float y_targets[3] = { 0.0f, 100.0f, 500.0f };
+	uint16_t *x_samples[3] = { weight_low, weight_mid, weight_high };
+	tactile_fit_curve(x_samples, y_targets, 128);
+	
+	// Clean memory allocations safely
+	free(weight_low);
+	free(weight_mid);
+	free(weight_high);
+}
+
 int main(void) {
 	// Initialise STM32
 	HAL_Init();
@@ -195,6 +263,9 @@ int main(void) {
 	USBD_RegisterClass(&hUsbDeviceFS, USBD_CDC_CLASS);
 	USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS);
 	USBD_Start(&hUsbDeviceFS);
+	
+	original_st_receive_func = USBD_Interface_fops_FS.Receive;
+	USBD_Interface_fops_FS.Receive = Custom_USB_Intercept;
 	
 	// Configure tactile geometry
 	matrix_config_t skin_config = {};
@@ -224,27 +295,7 @@ int main(void) {
 	
 	tactile_proc_init(&skin_proc);
 	
-	// Sensor calibration
-	uint16_t *weight_low = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	uint16_t *weight_mid = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	uint16_t *weight_high = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	
-	HAL_Delay(3000);
-	capture_calibration_frame(weight_low, 16);
-	
-	HAL_Delay(5000);
-	capture_calibration_frame(weight_mid, 16);
-	
-	HAL_Delay(5000);
-	capture_calibration_frame(weight_high, 16);
-	
-	float y_targets[3] = { 0.0f, 100.0f, 500.0f };
-	uint16_t *x_samples[3] = { weight_low, weight_mid, weight_high };
-	tactile_fit_curve(x_samples, y_targets, 128);
-	
-	free(weight_low);
-	free(weight_mid);
-	free(weight_high);
+	Run_Matrix_Calibration();
 	
 	// Frame buffers
 	uint16_t sensor_data[128] = {0};
@@ -255,8 +306,20 @@ int main(void) {
 	cdc_conversion_complete = 0;
 	
 	while (1) {
+		if (incoming_cal_cmd == 0x1F) {
+			incoming_cal_cmd = 0x00;
+			Run_Matrix_Calibration();
+			Clear_CDC_Interrupts();
+			cdc_conversion_complete = 0;
+			continue;
+		}
+		
 		while (cdc_conversion_complete == 0) {
 			// Idle until callback
+			// Check for reset
+			if (incoming_cal_cmd == 0x1F) {
+				break;
+			}
 		}
 		
 		// Ensure both CDCs are fully done converting

@@ -31,6 +31,21 @@ const int COLS = 16;
 const int CELL_SIZE = 150;
 const int WINDOW_WIDTH = COLS * CELL_SIZE;
 const int WINDOW_HEIGHT = ROWS * CELL_SIZE;
+const int BAR_HEIGHT = 60;
+const int RIGHT_MARGIN = 25;
+const int TEXT_Y = 19;
+const int TEXT_SIZE = 22;
+
+// Calibration step tracker
+enum CalibrationWizardStep {
+	STEP_READY = 0,
+	STEP_WAITING_LOW,
+	STEP_WAITING_MID,
+	STEP_WAITING_HIGH,
+	STEP_COMPLETE
+};
+
+CalibrationWizardStep wizard_step = STEP_READY;
 
 // Firmware data structure
 #pragma pack(push, 1)
@@ -160,6 +175,26 @@ bool ReadSerialFrame(SerialHandle handle, TactileFrame &frame) {
 #endif
 }
 
+/**
+ * @brief Sends a single byte command down the active serial interface.
+ * @param handle The active operating system serial connection handle.
+ * @param cmd The 8-bit command to transmit.
+ * @retval true If the byte was successfully sent without corruption
+ * * false Otherwise.
+ */
+bool WriteSerialByte(SerialHandle handle, uint8_t cmd) {
+#if defined(_WIN32)
+	DWORD bytesWritten;
+	if (WriteFile(handle, &cmd, 1, &bytesWritten, nullptr)) {
+		return (bytesWritten == 1);
+	}
+	return false;
+#else
+	ssize_t bytesWritten = write(handle, &cmd, 1);
+	return (bytesWritten == 1);
+#endif
+}
+
 int main() {
 	// Cross-Platform Port Name Resolution
 #if defined(_WIN32)
@@ -182,7 +217,7 @@ int main() {
 	}
 	
 	// Initialise Raylib Accelerated Window Engine
-	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Tactile Skin Visualiser");
+	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT + (2 * BAR_HEIGHT), "Tactile Skin Visualiser");
 	SetTargetFPS(60);
 	
 	TactileFrame current_frame = {0};
@@ -190,6 +225,55 @@ int main() {
 	
 	// Run loop
 	while (!WindowShouldClose()) {
+		if (wizard_step != STEP_COMPLETE) {
+			if (wizard_step == STEP_READY && IsKeyPressed(KEY_C)) {
+				wizard_step = STEP_WAITING_LOW;
+				std::cout << "[WIZARD] Calibration Initiated. STEP 1: Clear sensor matrix for low-range capture." << std::endl;
+				std::cout << "[WIZARD] Press [ENTER] when ready..." << std::endl;
+			} else if (wizard_step == STEP_WAITING_LOW && IsKeyPressed(KEY_ENTER)) {
+				uint8_t cmd = 0x10;
+				if (hardware_online && serial >= 0) {
+					std::cout << "[LINK] Sent trigger byte 0x10 (Low Tare) to MCU." << std::endl;
+					WriteSerialByte(serial, cmd);
+				} else {
+					std::cout << "[SIM] Simulating STEP 1: Low-range baseline locked." << std::endl;
+				}
+				wizard_step = STEP_WAITING_MID;
+				std::cout << "[WIZARD] STEP 2: Load mid-weight reference onto matrix." << std::endl;
+				std::cout << "[WIZARD] Press [ENTER] when load is secure and stable..." << std::endl;
+			} else if (wizard_step == STEP_WAITING_MID && IsKeyPressed(KEY_ENTER)) {
+				uint8_t cmd = 0x11;
+				if (hardware_online && serial >= 0) {
+					WriteSerialByte(serial, cmd);
+					std::cout << "[LINK] Sent trigger byte 0x11 (Mid Weight) to MCU." << std::endl;
+				} else {
+					std::cout << "[SIM] Simulating STEP 2: Mid-weight curve calculation locked." << std::endl;
+				}
+				wizard_step = STEP_WAITING_HIGH;
+				std::cout << "[WIZARD] STEP 3: Load high-weight reference onto matrix layers." << std::endl;
+				std::cout << "[WIZARD] Press [ENTER] when load is secure and stable..." << std::endl;
+			} else if (wizard_step == STEP_WAITING_HIGH && IsKeyPressed(KEY_ENTER)) {
+				uint8_t cmd = 0x12;
+				if (hardware_online && serial >= 0) {
+					WriteSerialByte(serial, cmd);
+					std::cout << "[LINK] Sent trigger byte 0x12 (High Weight) to MCU." << std::endl;
+				} else {
+					std::cout << "[SIM] Simulating STEP 3: High-weight curve parameters finalized." << std::endl;
+				}
+				wizard_step = STEP_COMPLETE;
+				std::cout << "[SUCCESS] Hardware calibration sequence complete and active! (Press 'R' to clear profiles)" << std::endl;
+			}
+		} else {
+			if (IsKeyPressed(KEY_R)) {
+				uint8_t cmd = 0x1F;
+				if (hardware_online) {
+					WriteSerialByte(serial, cmd);
+				}
+				wizard_step = STEP_READY;
+				std::cout << "[WIZARD] Calibration settings reset to default. System back to idle." << std::endl;
+			}
+		}
+		
 		if (hardware_online) {
 			ReadSerialFrame(serial, current_frame);
 		} else {
@@ -217,6 +301,7 @@ int main() {
 		BeginDrawing();
 		ClearBackground(BLACK);
 		
+		// Draw matrix
 		for (int r = 0; r < ROWS; ++r) {
 			for (int c = 0; c < COLS; ++c) {
 				uint16_t raw_val = current_frame.channels[r * COLS + c];
@@ -231,8 +316,55 @@ int main() {
 				
 				Color cell_color = { red_channel, green_channel, 0, 255 };
 				
-				DrawRectangle(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
+				DrawRectangle(c * CELL_SIZE, (r * CELL_SIZE) + BAR_HEIGHT, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
 			}
+		}
+		
+		// Draw calibration instructions
+		DrawRectangle(0, 0, WINDOW_WIDTH, BAR_HEIGHT, Fade(BLACK, 0.95f));
+		DrawLine(0, BAR_HEIGHT - 1, WINDOW_WIDTH, BAR_HEIGHT - 1, GRAY);
+		
+		if (wizard_step == STEP_READY) {
+			DrawText("SYSTEM OPERATIONAL", 25, 16, 26, ORANGE);
+			
+			const char *txt = "Press [C] to initiate Multi-Point Calibration Wizard";
+			int text_width = MeasureText(txt, TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+		} else if (wizard_step == STEP_WAITING_LOW) {
+			DrawText("CALIBRATION STEP 1/3: ZERO WEIGHT", 25, 16, 26, ORANGE);
+			
+			const char *txt = "Clear sensor completely. Press [ENTER] when cleared...";
+			int text_width = MeasureText(txt, TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+		} else if (wizard_step == STEP_WAITING_MID) {
+			DrawText("CALIBRATION STEP 2/3: MID WEIGHT", 25, 16, 26, ORANGE);
+			
+			const char *txt = "Place mid-range reference load onto sensor. Press [ENTER] when stable...";
+			int text_width = MeasureText(txt, TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+		} else if (wizard_step == STEP_WAITING_HIGH) {
+			DrawText("CALIBRATION STEP 3/3: HIGH WEIGHT", 25, 16, 26, ORANGE);
+			
+			const char *txt = "Place high-range reference load onto sensor. Press [ENTER] to compute curve...";
+			int text_width = MeasureText(txt, TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+		} else if (wizard_step == STEP_COMPLETE) {
+			DrawText("CALIBRATION PROFILES ACTIVE", 25, 16, 26, LIME);
+			
+			const char *txt = "Matrix hardware curve computed. Press [R] to clear mapping and reset.";
+			int text_width = MeasureText(txt, TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+		}
+		
+		// Draw link status bar
+		if (hardware_online) {
+			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, WINDOW_WIDTH, BAR_HEIGHT, ColorAlpha(BLACK, 0.9f));
+			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, 12, BAR_HEIGHT, GREEN);
+			DrawText("HARDWARE LIVE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 26, WHITE);
+		} else {
+			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, WINDOW_WIDTH, BAR_HEIGHT, ColorAlpha(BLACK, 0.9f));
+			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, 12, BAR_HEIGHT, RED);
+			DrawText("SIMULATION MODE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 26, WHITE);
 		}
 		
 		EndDrawing();
