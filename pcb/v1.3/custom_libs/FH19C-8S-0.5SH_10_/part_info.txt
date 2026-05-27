@@ -1,0 +1,9 @@
+Manufacturer=Hirose
+PartNumber=FH19C-8S-0.5SH(10)
+PartCategory=Connector
+PackageCategory=Other
+PinCount=10
+Version=2.3
+Released=2018-11-29 18:23:52
+Downloaded=2026-05-19 11:21:00
+3D=Y
