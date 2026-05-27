@@ -1,0 +1,11 @@
+FILE_TYPE = MULTI_PHYS_TABLE;
+
+PART 'FH19C_8S_0.5SH_10_'
+CLASS = IO
+{========================================================================================}
+:"MANUFACTURER_NAME", "MANUFACTURER_PART_NUMBER"= "PART_NUMBER", "JEDEC_TYPE", "PACK_TYPE", "MOUSER_PART_NUMBER", "MOUSER_PRICE/STOCK", "ARROW_PART_NUMBER", "ARROW_PRICE/STOCK", "DESCRIPTION", "DATASHEET", "HEIGHT";
+{========================================================================================}
+ "Hirose", "FH19C-8S-0.5SH(10)" (!) = "", "FH19C8S05SH10", "Other", "798-FH19C8S05SH10", "https://www.mouser.co.uk/ProductDetail/Hirose-Connector/FH19C-8S-0.5SH10?qs=kDD%2FdQe9TTeGPfcWhk%252BYwQ%3D%3D", "", "", "8 position FFC, FPC connectors Contacts, below 0.020" (0.50mm) Mounting mounting, straight angle , 50V of 50V , 0.5AA , -55C +85C", "https://www.hirose.com/en/product/document?clcode=CL0580-0404-9-10&productname=FH19C-8S-0.5SH(10)&series=FH19C__FH19SC&documenttype=2DDrawing&lang=en&documentid=0000990634", "1 mm"
+END_PART
+
+END.

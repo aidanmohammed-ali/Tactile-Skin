@@ -1,0 +1,13 @@
+(unit MM)
+
+(package "FH19C-8S-0_5SH_10_"
+    (type UNDEF)
+    (uver 2)
+    (cuser "SamacSys")
+    (uuser "SamacSys")
+    (utime 2024-12-11-12:17:53)
+    (mountForm default
+        (footprintRef "FH19C8S05SH10")
+        (spec "System")
+    )
+)

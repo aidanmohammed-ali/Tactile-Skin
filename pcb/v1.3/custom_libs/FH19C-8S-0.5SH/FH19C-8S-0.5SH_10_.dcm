@@ -1,0 +1,9 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP FH19C-8S-0.5SH_10_
+D 8 position FFC, FPC connectors Contacts, below 0.020" (0.50mm) Mounting mounting, straight angle , 50V of 50V , 0.5AA , -55C +85C
+K
+F https://www.hirose.com/en/product/document?clcode=CL0580-0404-9-10&productname=FH19C-8S-0.5SH(10)&series=FH19C__FH19SC&documenttype=2DDrawing&lang=en&documentid=0000990634
+$ENDCMP
+#
+#End Doc Library
