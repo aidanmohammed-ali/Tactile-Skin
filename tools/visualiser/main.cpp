@@ -6,6 +6,9 @@
  * @date 2026-05-23
  */
 
+#define RAYGUI_IMPLEMENTATION
+#include "raygui.h"
+
 #include <iostream>
 #include <cstdint>
 #include <vector>
@@ -28,13 +31,13 @@
 // Geometry configuration 
 const int ROWS = 8;
 const int COLS = 16;
-const int CELL_SIZE = 150;
+const int CELL_SIZE = 100;
 const int WINDOW_WIDTH = COLS * CELL_SIZE;
 const int WINDOW_HEIGHT = ROWS * CELL_SIZE;
 const int BAR_HEIGHT = 60;
 const int RIGHT_MARGIN = 25;
 const int TEXT_Y = 19;
-const int TEXT_SIZE = 22;
+const int STATUS_TEXT_SIZE = 22;
 
 // Calibration step tracker
 enum CalibrationWizardStep {
@@ -196,30 +199,54 @@ bool WriteSerialByte(SerialHandle handle, uint8_t cmd) {
 }
 
 int main() {
-	// Cross-Platform Port Name Resolution
-#if defined(_WIN32)
-	const char *default_port = "\\\\.\\COM3";
-#elif defined(__APPLE__)
-	const char *default_port = "/dev/cu.usbmodem101";
-#else
-	const char *default_port = "/dev/ttyACM0";
-#endif
-
-	// Initialise Operating System Serial Connection
-	std::cout << "[INIT] Connecting to tactile matrix on " << default_port << "..." << std::endl;
-	SerialHandle serial = OpenSerialPort(default_port);
-	bool hardware_online = (serial != INVALID_SERIAL);
+	// Start the application completely disconnected
+	SerialHandle serial = INVALID_SERIAL;
+	bool hardware_online = false;
 	
-	if (hardware_online) {
-		std::cout << "[SUCCESS] Hardware online. Streaming telemetry..." << std::endl;
-	} else {
-		std::cout << "[WARN] Hardware offline or permission denied. Running in Simulation Mode." << std::endl;
-	}
+	std::cout << "[INT] Visualiser starting. Please select a port from the menu." << std::endl;
+	
+	// Initialise Raygui
+	const char *port_list = "SELECT DEVICE NODE;/dev/ttyACM0;/dev/ttyACM1;/dev/ttyACM2;COM3;COM4;COM5;\\\\.\\COM3;\\\\.\\COM4;\\\\.\\COM5;SIMULATOR";
+	int dropdown_active_index = 0;
+	int last_selected_index = 0;
 	
 	// Initialise Raylib Accelerated Window Engine
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT + (2 * BAR_HEIGHT), "Tactile Skin Visualiser");
 	SetTargetFPS(60);
 	
+	// Style extension
+	GuiSetStyle(DEFAULT, TEXT_SIZE, 22);
+	GuiSetStyle(DEFAULT, BACKGROUND_COLOR, ColorToInt({ 30, 30, 30, 255 }));
+	GuiSetStyle(DEFAULT, LINE_COLOR, ColorToInt(GRAY));
+	GuiSetStyle(DEFAULT, TEXT_COLOR_NORMAL, ColorToInt(WHITE));
+	
+	// Hover state across lists
+	GuiSetStyle(DEFAULT, TEXT_COLOR_FOCUSED, ColorToInt(ORANGE));
+	GuiSetStyle(DEFAULT, BORDER_COLOR_FOCUSED, ColorToInt(ORANGE));
+	
+	// Idle State
+	GuiSetStyle(COMBOBOX, BASE_COLOR_NORMAL, ColorToInt({ 45, 45, 45, 255 }));
+	GuiSetStyle(COMBOBOX, BORDER_COLOR_NORMAL, ColorToInt(GRAY));
+	GuiSetStyle(COMBOBOX, TEXT_COLOR_NORMAL, ColorToInt(WHITE));
+	
+	// Hovered State
+	GuiSetStyle(COMBOBOX, BASE_COLOR_FOCUSED, ColorToInt({ 65, 65, 65, 255 }));
+	GuiSetStyle(COMBOBOX, BORDER_COLOR_FOCUSED, ColorToInt(ORANGE));
+	GuiSetStyle(COMBOBOX, TEXT_COLOR_FOCUSED, ColorToInt(ORANGE));
+	
+	// Pressed/Expanded
+	GuiSetStyle(DROPDOWNBOX, BASE_COLOR_NORMAL, ColorToInt({ 35, 35, 35, 255 }));
+	GuiSetStyle(DROPDOWNBOX, TEXT_COLOR_NORMAL, ColorToInt(WHITE));
+	GuiSetStyle(DROPDOWNBOX, BASE_COLOR_FOCUSED, ColorToInt({ 60, 60, 60, 255 }));
+	GuiSetStyle(DROPDOWNBOX, TEXT_COLOR_FOCUSED, ColorToInt(ORANGE));
+	GuiSetStyle(DROPDOWNBOX, BASE_COLOR_PRESSED, ColorToInt({ 80, 80, 80, 255 }));
+	GuiSetStyle(DROPDOWNBOX, TEXT_COLOR_PRESSED, ColorToInt(LIME));
+	
+	// Buttom
+	GuiSetStyle(COMBOBOX, COMBO_BUTTON_WIDTH, 46);
+	GuiSetStyle(DEFAULT, BORDER_COLOR_NORMAL, ColorToInt(GRAY));
+	GuiSetStyle(DEFAULT, BASE_COLOR_NORMAL, ColorToInt({ 55, 55, 55, 255 }));
+		
 	TactileFrame current_frame = {0};
 	float simulation_time = 0.0f;
 	
@@ -232,7 +259,7 @@ int main() {
 				std::cout << "[WIZARD] Press [ENTER] when ready..." << std::endl;
 			} else if (wizard_step == STEP_WAITING_LOW && IsKeyPressed(KEY_ENTER)) {
 				uint8_t cmd = 0x10;
-				if (hardware_online && serial >= 0) {
+				if (hardware_online && serial != INVALID_SERIAL) {
 					std::cout << "[LINK] Sent trigger byte 0x10 (Low Tare) to MCU." << std::endl;
 					WriteSerialByte(serial, cmd);
 				} else {
@@ -243,7 +270,7 @@ int main() {
 				std::cout << "[WIZARD] Press [ENTER] when load is secure and stable..." << std::endl;
 			} else if (wizard_step == STEP_WAITING_MID && IsKeyPressed(KEY_ENTER)) {
 				uint8_t cmd = 0x11;
-				if (hardware_online && serial >= 0) {
+				if (hardware_online && serial != INVALID_SERIAL) {
 					WriteSerialByte(serial, cmd);
 					std::cout << "[LINK] Sent trigger byte 0x11 (Mid Weight) to MCU." << std::endl;
 				} else {
@@ -254,7 +281,7 @@ int main() {
 				std::cout << "[WIZARD] Press [ENTER] when load is secure and stable..." << std::endl;
 			} else if (wizard_step == STEP_WAITING_HIGH && IsKeyPressed(KEY_ENTER)) {
 				uint8_t cmd = 0x12;
-				if (hardware_online && serial >= 0) {
+				if (hardware_online && serial != INVALID_SERIAL) {
 					WriteSerialByte(serial, cmd);
 					std::cout << "[LINK] Sent trigger byte 0x12 (High Weight) to MCU." << std::endl;
 				} else {
@@ -328,32 +355,32 @@ int main() {
 			DrawText("SYSTEM OPERATIONAL", 25, 16, 26, ORANGE);
 			
 			const char *txt = "Press [C] to initiate Multi-Point Calibration Wizard";
-			int text_width = MeasureText(txt, TEXT_SIZE);
-			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_WAITING_LOW) {
 			DrawText("CALIBRATION STEP 1/3: ZERO WEIGHT", 25, 16, 26, ORANGE);
 			
 			const char *txt = "Clear sensor completely. Press [ENTER] when cleared...";
-			int text_width = MeasureText(txt, TEXT_SIZE);
-			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_WAITING_MID) {
 			DrawText("CALIBRATION STEP 2/3: MID WEIGHT", 25, 16, 26, ORANGE);
 			
 			const char *txt = "Place mid-range reference load onto sensor. Press [ENTER] when stable...";
-			int text_width = MeasureText(txt, TEXT_SIZE);
-			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_WAITING_HIGH) {
 			DrawText("CALIBRATION STEP 3/3: HIGH WEIGHT", 25, 16, 26, ORANGE);
 			
 			const char *txt = "Place high-range reference load onto sensor. Press [ENTER] to compute curve...";
-			int text_width = MeasureText(txt, TEXT_SIZE);
-			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_COMPLETE) {
 			DrawText("CALIBRATION PROFILES ACTIVE", 25, 16, 26, LIME);
 			
 			const char *txt = "Matrix hardware curve computed. Press [R] to clear mapping and reset.";
-			int text_width = MeasureText(txt, TEXT_SIZE);
-			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, TEXT_SIZE, LIGHTGRAY);
+			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
+			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		}
 		
 		// Draw link status bar
@@ -367,6 +394,68 @@ int main() {
 			DrawText("SIMULATION MODE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 26, WHITE);
 		}
 		
+		// Draw dropdown menu
+		GuiComboBox({ (float)(WINDOW_WIDTH - 425), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 400, 46 }, port_list, &dropdown_active_index);
+		if (dropdown_active_index != last_selected_index) {
+			last_selected_index = dropdown_active_index;
+
+			if (serial != INVALID_SERIAL) {
+#if defined(_WIN32)
+				CloseHandle(serial);
+#else
+				close(serial);
+#endif
+				serial = INVALID_SERIAL;
+				hardware_online = false;
+			}
+
+			const char *target_path = nullptr;
+			switch (dropdown_active_index) {
+				case 1:
+					target_path = "/dev/ttyACM0";
+					break;
+				case 2:
+					target_path = "/dev/ttyACM1";
+					break;
+				case 3:
+					target_path = "/dev/ttyACM2";
+					break;
+				case 4:
+					target_path = "COM3";
+					break;
+				case 5:
+					target_path = "COM4";
+					break;
+				case 6:
+					target_path = "COM5";
+					break;
+				case 7:
+					target_path = "\\\\.\\COM3";
+					break;
+				case 8:
+					target_path = "\\\\.\\COM4";
+					break;
+				case 9:
+					target_path = "\\\\.\\COM5";
+					break;
+				default:
+					target_path = nullptr;
+					break;
+			}
+
+			if (target_path != nullptr) {
+				std::cout << "[SERIAL LINK] Opening connection to " << target_path << "..." << std::endl;
+				serial = OpenSerialPort(target_path);
+				hardware_online = (serial != INVALID_SERIAL);
+				if (!hardware_online) {
+					std::cout << "[ERROR] Connection failed. Falling back to Simulation Mode." << std::endl;
+				}
+			} else {
+				hardware_online = false;
+				std::cout << "[SERIAL LINK] Forced Simulation Mode via menu." << std::endl;
+			}
+		}
+		
 		EndDrawing();
 	}
 	
@@ -374,7 +463,7 @@ int main() {
 	std::cout << "[SHUTDOWN] Closing graphics pipeline modules..." << std::endl;
 	CloseWindow();
 	
-	if (hardware_online) {
+	if (serial != INVALID_SERIAL) {
 #if defined(_WIN32)
 	CloseHandle(serial);
 #else
