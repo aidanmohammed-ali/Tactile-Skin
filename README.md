@@ -14,6 +14,13 @@ This project focuses on creating a thin, flexible tactile skin that measures mec
 * `/include`: Global header files (`.h`).
 * `platformio.ini`: The core PlatformIO configuration script.
 
+### Tools
+* `/visualiser`: A high-performance, cross-platform desktop utility built with Raylib. Features include:
+  * **Multi-Instance Isolation:** Run multiple parallel instances side-by-side to monitor independent microcontrollers simultaneously.
+  * **Dynamic Port Mapping:** Hot-swap hardware link contexts on-the-fly via an integrated UI selector.
+  * **Multi-Point Calibration Wizard:** Interactive step-by-step UI to trigger hardware tares (Low, Mid, High) directly on the MCU.
+  * **Zero-Lag Simulation Mode:** Automated fallback to a high-fidelity Gaussian simulation model when running offline.
+
 ### Hardware
 
 ## Contribution Guidelines
