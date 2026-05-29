@@ -28,6 +28,7 @@
 	#include <unistd.h>
 	#include <fcntl.h>
 	#include <termios.h>
+	#include <sys/ioctl.h>
 #endif
 
 // Geometry configuration 
@@ -176,22 +177,18 @@ bool ReadSerialFrame(SerialHandle handle, TactileFrame &frame) {
 	}
 	return true;
 #else
-	uint32_t totalBytesRead = 0;
-	while (totalBytesRead < bytesToRead) {
-		ssize_t bytesRead = read(handle, buffer + totalBytesRead, bytesToRead - totalBytesRead);
-		
-		if (bytesRead > 0) {
-			totalBytesRead += bytesRead;
-		} else if (bytesRead == 0) {
-			return false;
-		} else {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				return false;
-			}
-			return false;
-		}
+	int bytesAvailable = 0;
+	
+	if (ioctl(handle, FIONREAD, &bytesAvailable) < 0) {
+		return false;
 	}
-	return true;
+	
+	if (bytesAvailable < static_cast<int>(bytesToRead)) {
+		return false;
+	}
+	
+	ssize_t bytesRead = read(handle, buffer, bytesToRead);
+	return (bytesRead == bytesToRead);
 #endif
 }
 
