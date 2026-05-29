@@ -21,6 +21,8 @@
 	#ifndef WIN32_LEAN_AND_MEAN
 		#define WIN32_LEAN_AND_MEAN // Exclude unneeded legacy Windows headers
 	#endif
+	#define NOGDI
+	#define NOUSER
 	#include <windows.h>
 #else
 	#include <unistd.h>
@@ -73,7 +75,8 @@ typedef struct {
  */
 SerialHandle OpenSerialPort(const char *portName) {
 #if defined(_WIN32)
-	SerialHandle handle = CreateFileA(portName, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+	SerialHandle handle = CreateFileA(portName, GENERIC_READ | GENERIC_WRITE,
+										0, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (handle == INVALID_HANDLE_VALUE) {
 		return INVALID_SERIAL;
 	}
@@ -94,6 +97,18 @@ SerialHandle OpenSerialPort(const char *portName) {
 		CloseHandle(handle);
 		return INVALID_SERIAL;
 	}
+	
+	COMMTIMEOUTS timeouts = {0};
+	timeouts.ReadIntervalsTimeout = MAXWORD;
+	timeouts.ReadTotalTimeoutConstant = 0;
+	timeouts.ReadTotalTimeoutMultiplier = 0;
+    timeouts.WriteTotalTimeoutConstant = 50;
+    timeouts.WriteTotalTimeoutMultiplier = 10;
+    
+    if (!SetCommTimeouts(handle, &timeouts)) {
+        CloseHandle(handle);
+        return INVALID_SERIAL;
+    }
 	
 	return handle;
 #else
@@ -144,22 +159,24 @@ bool ReadSerialFrame(SerialHandle handle, TactileFrame &frame) {
 	// Map a raw byte pointer directly to data layout
 	uint8_t *buffer = reinterpret_cast<uint8_t*>(&frame);
 	uint32_t bytesToRead = sizeof(TactileFrame);
-	uint32_t totalBytesRead = 0;
 	
 #if defined(_WIN32)
+	DWORD errors;
+	COMSTAT status;
+	
+	ClearCommError(handle, &errors, &status);
+	
+	if (status.cbInQue < bytesToRead) {
+		return false;
+	}
+	
 	DWORD bytesRead;
-	while (totalBytesRead < bytesToRead) {
-		if (ReadFile(handle, buffer + totalBytesRead, bytesToRead - totalBytesRead, &bytesRead, nullptr)) {
-			if (bytesRead == 0) {
-				return false;
-			}
-			totalBytesRead += bytesRead;
-		} else {
-			return false;
-		}
+	if (ReadFile(handle, buffer, bytesToRead, &bytesRead, nullptr)) {
+		return (bytesRead == bytesToRead);
 	}
 	return true;
 #else
+	uint32_t totalBytesRead = 0;
 	while (totalBytesRead < bytesToRead) {
 		ssize_t bytesRead = read(handle, buffer + totalBytesRead, bytesToRead - totalBytesRead);
 		
@@ -206,7 +223,7 @@ int main() {
 	std::cout << "[INT] Visualiser starting. Please select a port from the menu." << std::endl;
 	
 	// Initialise Raygui
-	const char *port_list = "SELECT DEVICE NODE;/dev/ttyACM0;/dev/ttyACM1;/dev/ttyACM2;COM3;COM4;COM5;\\\\.\\COM3;\\\\.\\COM4;\\\\.\\COM5;SIMULATOR";
+	const char *port_list = "SIMULATOR;/dev/ttyACM0;/dev/ttyACM1;/dev/ttyACM2;COM7;COM8;COM9";
 	int dropdown_active_index = 0;
 	int last_selected_index = 0;
 	
@@ -242,7 +259,7 @@ int main() {
 	GuiSetStyle(DROPDOWNBOX, BASE_COLOR_PRESSED, ColorToInt({ 80, 80, 80, 255 }));
 	GuiSetStyle(DROPDOWNBOX, TEXT_COLOR_PRESSED, ColorToInt(LIME));
 	
-	// Buttom
+	// Button
 	GuiSetStyle(COMBOBOX, COMBO_BUTTON_WIDTH, 46);
 	GuiSetStyle(DEFAULT, BORDER_COLOR_NORMAL, ColorToInt(GRAY));
 	GuiSetStyle(DEFAULT, BASE_COLOR_NORMAL, ColorToInt({ 55, 55, 55, 255 }));
@@ -421,22 +438,13 @@ int main() {
 					target_path = "/dev/ttyACM2";
 					break;
 				case 4:
-					target_path = "COM3";
+					target_path = "COM7";
 					break;
 				case 5:
-					target_path = "COM4";
+					target_path = "COM8";
 					break;
 				case 6:
-					target_path = "COM5";
-					break;
-				case 7:
-					target_path = "\\\\.\\COM3";
-					break;
-				case 8:
-					target_path = "\\\\.\\COM4";
-					break;
-				case 9:
-					target_path = "\\\\.\\COM5";
+					target_path = "COM9";
 					break;
 				default:
 					target_path = nullptr;
