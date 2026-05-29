@@ -31,13 +31,13 @@
 // Geometry configuration 
 const int ROWS = 8;
 const int COLS = 16;
-const int CELL_SIZE = 100;
+const int CELL_SIZE = 75;
 const int WINDOW_WIDTH = COLS * CELL_SIZE;
 const int WINDOW_HEIGHT = ROWS * CELL_SIZE;
 const int BAR_HEIGHT = 60;
 const int RIGHT_MARGIN = 25;
 const int TEXT_Y = 19;
-const int STATUS_TEXT_SIZE = 22;
+const int STATUS_TEXT_SIZE = 18;
 
 // Calibration step tracker
 enum CalibrationWizardStep {
@@ -215,7 +215,7 @@ int main() {
 	SetTargetFPS(60);
 	
 	// Style extension
-	GuiSetStyle(DEFAULT, TEXT_SIZE, 22);
+	GuiSetStyle(DEFAULT, TEXT_SIZE, 18);
 	GuiSetStyle(DEFAULT, BACKGROUND_COLOR, ColorToInt({ 30, 30, 30, 255 }));
 	GuiSetStyle(DEFAULT, LINE_COLOR, ColorToInt(GRAY));
 	GuiSetStyle(DEFAULT, TEXT_COLOR_NORMAL, ColorToInt(WHITE));
@@ -352,31 +352,31 @@ int main() {
 		DrawLine(0, BAR_HEIGHT - 1, WINDOW_WIDTH, BAR_HEIGHT - 1, GRAY);
 		
 		if (wizard_step == STEP_READY) {
-			DrawText("SYSTEM OPERATIONAL", 25, 16, 26, ORANGE);
+			DrawText("SYSTEM OPERATIONAL", 25, 16, 22, ORANGE);
 			
 			const char *txt = "Press [C] to initiate Multi-Point Calibration Wizard";
 			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
 			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_WAITING_LOW) {
-			DrawText("CALIBRATION STEP 1/3: ZERO WEIGHT", 25, 16, 26, ORANGE);
+			DrawText("CALIBRATION STEP 1/3: ZERO WEIGHT", 25, 16, 22, ORANGE);
 			
 			const char *txt = "Clear sensor completely. Press [ENTER] when cleared...";
 			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
 			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_WAITING_MID) {
-			DrawText("CALIBRATION STEP 2/3: MID WEIGHT", 25, 16, 26, ORANGE);
+			DrawText("CALIBRATION STEP 2/3: MID WEIGHT", 25, 16, 22, ORANGE);
 			
 			const char *txt = "Place mid-range reference load onto sensor. Press [ENTER] when stable...";
 			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
 			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_WAITING_HIGH) {
-			DrawText("CALIBRATION STEP 3/3: HIGH WEIGHT", 25, 16, 26, ORANGE);
+			DrawText("CALIBRATION STEP 3/3: HIGH WEIGHT", 25, 16, 22, ORANGE);
 			
 			const char *txt = "Place high-range reference load onto sensor. Press [ENTER] to compute curve...";
 			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
 			DrawText(txt, WINDOW_WIDTH - text_width - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
 		} else if (wizard_step == STEP_COMPLETE) {
-			DrawText("CALIBRATION PROFILES ACTIVE", 25, 16, 26, LIME);
+			DrawText("CALIBRATION PROFILES ACTIVE", 25, 16, 22, LIME);
 			
 			const char *txt = "Matrix hardware curve computed. Press [R] to clear mapping and reset.";
 			int text_width = MeasureText(txt, STATUS_TEXT_SIZE);
@@ -387,11 +387,11 @@ int main() {
 		if (hardware_online) {
 			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, WINDOW_WIDTH, BAR_HEIGHT, ColorAlpha(BLACK, 0.9f));
 			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, 12, BAR_HEIGHT, GREEN);
-			DrawText("HARDWARE LIVE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 26, WHITE);
+			DrawText("HARDWARE LIVE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 22, WHITE);
 		} else {
 			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, WINDOW_WIDTH, BAR_HEIGHT, ColorAlpha(BLACK, 0.9f));
 			DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, 12, BAR_HEIGHT, RED);
-			DrawText("SIMULATION MODE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 26, WHITE);
+			DrawText("SIMULATION MODE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 22, WHITE);
 		}
 		
 		// Draw dropdown menu
