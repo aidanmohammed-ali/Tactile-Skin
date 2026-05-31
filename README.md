@@ -15,14 +15,14 @@ The core software running on the microcontroller, built using PlatformIO. It han
 * `/include`: Global header files (`.h`).
 * `platformio.ini`: The core PlatformIO configuration script.
 
-### Tools
+### Tools (`/tools`)
 * `/visualiser`: A high-performance, cross-platform desktop utility built with Raylib. Features include:
   * **Multi-Instance Isolation:** Run multiple parallel instances side-by-side to monitor independent microcontrollers simultaneously.
   * **Dynamic Port Mapping:** Hot-swap hardware link contexts on-the-fly via an integrated UI selector.
   * **Multi-Point Calibration Wizard:** Interactive step-by-step UI to trigger hardware tares (Low, Mid, High) directly on the MCU.
   * **Zero-Lag Simulation Mode:** Automated fallback to a high-fidelity Gaussian simulation model when running offline.
 
-### Hardware
+### Hardware (`/hardware`)
 * `/fpc`: Flexible Printed Circuit manufacturing files.
   * Complete production-ready Gerber packages.
 * `/pcb`: Main rigid Printed Circuit Board design histories.
