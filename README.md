@@ -10,6 +10,7 @@ This project focuses on creating a thin, flexible tactile skin that measures mec
 ## Repository Structure
 
 ### Firmware
+The core software running on the microcontroller, built using PlatformIO. It handles high-speed analog acquisition from the skin matrix and packs it for serial transmission.
 * `/src`: Main firmware source files (`.c` & `.cpp`).
 * `/include`: Global header files (`.h`).
 * `platformio.ini`: The core PlatformIO configuration script.
@@ -22,6 +23,10 @@ This project focuses on creating a thin, flexible tactile skin that measures mec
   * **Zero-Lag Simulation Mode:** Automated fallback to a high-fidelity Gaussian simulation model when running offline.
 
 ### Hardware
+* `/fpc`: Flexible Printed Circuit manufacturing files.
+  * Complete production-ready Gerber packages.
+* `/pcb`: Main rigid Printed Circuit Board design histories.
+  * Main interface between the sensor and microcontroller.
 
 ## Contribution Guidelines
 
