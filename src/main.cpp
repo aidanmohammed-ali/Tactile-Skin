@@ -26,8 +26,11 @@ SPI_HandleTypeDef hspi1; // CDC A
 SPI_HandleTypeDef hspi2; // CDC B
 
 volatile uint8_t current_column = 0;
-volatile uint8_t cdc_conversion_complete = 0;
+volatile uint8_t cdc_a_conversion_complete = 0;
+volatile uint8_t cdc_b_conversion_complete = 0;
 volatile uint8_t incoming_cal_cmd = 0x00;
+
+bool cdc_b_hardware_present = false;
 
 int8_t (*original_st_receive_func)(uint8_t*, uint32_t*) = NULL;
 
@@ -303,18 +306,20 @@ int main(void) {
 	
 	// Clear initial startup triggers
 	Clear_CDC_Interrupts();
-	cdc_conversion_complete = 0;
+	cdc_a_conversion_complete = 0;
+	cdc_b_conversion_complete = 0;
 	
 	while (1) {
 		if (incoming_cal_cmd == 0x1F) {
 			incoming_cal_cmd = 0x00;
 			Run_Matrix_Calibration();
 			Clear_CDC_Interrupts();
-			cdc_conversion_complete = 0;
+			cdc_a_conversion_complete = 0;
+			cdc_b_conversion_complete = 0;
 			continue;
 		}
 		
-		while (cdc_conversion_complete == 0) {
+		while (cdc_a_conversion_complete == 0 || (cdc_b_hardware_present && cdc_b_conversion_complete == 0)) {
 			// Idle until callback
 			// Check for reset
 			if (incoming_cal_cmd == 0x1F) {
@@ -334,14 +339,19 @@ int main(void) {
 				}
 			}
 			if (!cdc_b_done) {
-				uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
-				if (status_b & 0x0080) {
+				if (cdc_b_hardware_present) {
+					uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
+					if (status_b & 0x0080) {
+						cdc_b_done = 1;
+					}
+				} else {
 					cdc_b_done = 1;
 				}
 			}
 		}
 		
-		cdc_conversion_complete = 0;
+		cdc_a_conversion_complete = 0;
+		cdc_b_conversion_complete = 0;
 		
 		matrix_scan_parallel(sensor_data);
 		tactile_process_frame(sensor_data, processed_data, 128);
@@ -430,7 +440,7 @@ void MX_GPIO_Init(void) {
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
 	// Configure INT
-	GPIO_InitStruct.Pin = GPIO_PIN_3;
+	GPIO_InitStruct.Pin = GPIO_PIN_3 | GPIO_PIN_8;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	
@@ -460,6 +470,9 @@ void MX_GPIO_Init(void) {
 	// Listen to interrupt channel
 	HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
 	HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+	
+	HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
+	HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 /**
@@ -532,9 +545,22 @@ void AD7142_Init(void) {
 	
 	const int num_registers = sizeof(bank1_table) / sizeof(bank1_table[0]);
 	
+	// Initialise CDC1
 	for (int i = 0; i < num_registers; ++i) {
 		AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, bank1_table[i].reg_addr, bank1_table[i].reg_val);
-		AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, bank1_table[i].reg_addr, bank1_table[i].reg_val);
+	}
+	
+	// Probe CDC2
+	uint16_t cdc_b_id = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x017);
+	
+	if (cdc_b_id != 0x0000 && cdc_b_id != 0xFFFF) {
+		cdc_b_hardware_present = true;
+	}
+	
+	for (int i = 0; i < num_registers; ++i) {
+		if (cdc_b_hardware_present) {
+			AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, bank1_table[i].reg_addr, bank1_table[i].reg_val);
+		}
 	}
 	
 	// Bank 2
@@ -589,10 +615,16 @@ void AD7142_Init(void) {
 				}
 
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val);
-				AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, val);
+				
+				if (cdc_b_hardware_present) {
+					AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, val);
+				}
 			} else {
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, unused_reg_vals[i]);
-				AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, unused_reg_vals[i]);
+				
+				if (cdc_b_hardware_present) {
+					AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, unused_reg_vals[i]);
+				}
 			}
 			addr++;
 		}
@@ -605,10 +637,13 @@ void AD7142_Init(void) {
  */
 void Clear_CDC_Interrupts(void) {
 	uint16_t status_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x00A);
-	uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
-	
+		
 	(void)status_a;
-	(void)status_b;
+	
+	if (cdc_b_hardware_present) {
+		uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
+		(void)status_b;
+	}
 }
 
 /**
@@ -626,12 +661,22 @@ extern "C" void EXTI3_IRQHandler(void) {
 }
 
 /**
+ * @brief Hardware Interrupt Vector for EXTI Lines 5 to 9.
+ */
+extern "C" void EXTI9_5_IRQHandler(void) {
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_8);
+}
+
+/**
  * @brief STM32 External Interrupt Callback hook.
  * @param Interrupt GPIO Pin.
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_3) {
-		cdc_conversion_complete = 1;
+		cdc_a_conversion_complete = 1;
+	}
+	if (GPIO_Pin == GPIO_PIN_8) {
+		cdc_b_conversion_complete = 1;
 	}
 }
 
