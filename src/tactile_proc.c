@@ -20,6 +20,14 @@ void tactile_proc_init(proc_config_t *config) {
 	}
 	
 	processing_config = *config;
+	
+	if (processing_config.curves != NULL) {
+		for (int i = 0; i < 128; i++) {
+			processing_config.curves[i].a = 0.0f;
+			processing_config.curves[i].b = 1.0f;
+			processing_config.curves[i].c = 0.0f;
+		}
+	}
 }
 
 /**
@@ -46,10 +54,10 @@ void tactile_fit_curve(uint16_t *x_samples[3], float y_values[3], uint16_t size)
 	}
 	
 	for (uint16_t i = 0; i < size; ++i) {
-		float x[3] = { (float)x_samples[0][i], (float)x_samples[1][i], (float)x_samples[2][i] };
-		float y[3] = { y_values[0], y_values[1], y_values[2] };
+		double x[3] = { (double)x_samples[0][i], (double)x_samples[1][i], (double)x_samples[2][i] };
+		double y[3] = { (double)y_values[0], (double)y_values[1], (double)y_values[2] };
 	
-		float det = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2]);
+		double det = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2]);
 	
 		// If Singular Default to Linear
 		if (det == 0.0f) {
@@ -59,19 +67,23 @@ void tactile_fit_curve(uint16_t *x_samples[3], float y_values[3], uint16_t size)
 			continue;
 		}
 		
-		float inv_det = 1.0f / det;
-		processing_config.curves[i].a = ( (y[0] * (x[1] - x[2])) -
-										   (y[1] * (x[0] - x[2])) +
-										   (y[2] * (x[0] - x[1]))) * inv_det;
+		double inv_det = 1.0f / det;
+		double a = ( (y[0] * (x[1] - x[2])) -
+					 (y[1] * (x[0] - x[2])) +
+					 (y[2] * (x[0] - x[1]))) * inv_det;
 							   
-		processing_config.curves[i].b = (-(y[0] * (x[1] * x[1] - x[2] * x[2])) +
-										   (y[1] * (x[0] * x[0] - x[2] * x[2])) -
-										   (y[2] * (x[0] * x[0] - x[1] * x[1]))) * inv_det;
+		double b = (-(y[0] * (x[1] * x[1] - x[2] * x[2])) +
+					 (y[1] * (x[0] * x[0] - x[2] * x[2])) -
+					 (y[2] * (x[0] * x[0] - x[1] * x[1]))) * inv_det;
 							   
-		processing_config.curves[i].c = ( (y[0] * (x[1] * x[1] * x[2] - x[2] * x[2] * x[1])) - 
-										   (y[1] * (x[0] * x[0] * x[2] - x[2] * x[2] * x[0])) +
-										   (y[2] * (x[0] * x[0] * x[1] - x[1] * x[1] * x[0]))) * inv_det;
-		}
+		double c = ( (y[0] * (x[1] * x[1] * x[2] - x[2] * x[2] * x[1])) - 
+					 (y[1] * (x[0] * x[0] * x[2] - x[2] * x[2] * x[0])) +
+					 (y[2] * (x[0] * x[0] * x[1] - x[1] * x[1] * x[0]))) * inv_det;
+		
+		processing_config.curves[i].a = (float)a;
+		processing_config.curves[i].b = (float)b;
+		processing_config.curves[i].c = (float)c;
+	}
 }
 
 /**
@@ -86,21 +98,29 @@ void tactile_process_frame(const uint16_t *raw_frame, uint16_t *processed_frame,
 		return;
 	}
 	
+	// EMA filtering
+	static float smoothed_data[128] = {0.0f};
+	const float alpha = 0.15f;;
+	
 	for (uint16_t i = 0; i < size; ++i) {
 		float x = (float)raw_frame[i];
 		
 		float out = (processing_config.curves[i].a * x * x) +
 					(processing_config.curves[i].b * x) +
 					(processing_config.curves[i].c);
-					
-		if (out < processing_config.noise_threshold) {
-			out = 0.0f;
+		
+		smoothed_data[i] = (alpha * out) + ((1.0 - alpha) * smoothed_data[i]);
+		
+		float final_out = smoothed_data[i];
+		
+		if (final_out < processing_config.noise_threshold) {
+			final_out = 0.0f;
 		}
 		
-		if (out > processing_config.max_output) {
-			out = processing_config.max_output;
+		if (final_out > processing_config.max_output) {
+			final_out = processing_config.max_output;
 		}
 		
-		processed_frame[i] = (uint16_t)out;
+		processed_frame[i] = (uint16_t)final_out;
 	}
 }
