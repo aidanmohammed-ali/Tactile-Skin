@@ -16,6 +16,10 @@ typedef struct {
 	void (*set_row_func)(uint8_t addr);
 	void (*set_col_func)(uint8_t addr);
 	
+	// Synchronisation Hooks
+	void (*trigger_scan_func)(void);
+	void (*wait_ready_func)(void);
+	
 	uint8_t use_parallel_scan;
 	
 	// Address Pins

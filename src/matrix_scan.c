@@ -78,7 +78,7 @@ void set_mux_row(uint8_t addr) {
 	}
 	
 	for (uint8_t i = 0; i < board_config.num_row_addr_pins; ++i) {
-		uint8_t state = (local_addr >> i) & 0x01;
+		uint8_t state = !((local_addr >> i) & 0x01);
 		set_gpio_state(board_config.row_addr_pins[i], state);
 	}
 }
@@ -100,7 +100,7 @@ void set_mux_col(uint8_t addr) {
 	}
 	
 	for (uint8_t i = 0; i < board_config.num_col_addr_pins; ++i) {
-		uint8_t state = (local_addr >> i) & 0x01;
+		uint8_t state = !((local_addr >> i) & 0x01);
 		set_gpio_state(board_config.col_addr_pins[i], state);
 	}
 }
@@ -118,13 +118,18 @@ void matrix_scan_parallel(uint16_t* buffer) {
 	
 	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
 		board_config.set_row_func(r);
+		delay_us(500);
+		
+		if (board_config.trigger_scan_func != NULL) {
+			board_config.trigger_scan_func();
+		}
+		
+		if (board_config.wait_ready_func != NULL) {
+			board_config.wait_ready_func();
+		}
 		
 		for (uint16_t c = 0; c < half_width; ++c) {
 			board_config.set_col_func(c);
-			
-			if (board_config.settle_time_us > 0) {
-				delay_us(board_config.settle_time_us);
-			}
 			
 			uint16_t val_a, val_b;
 			get_sensor_pair(&val_a, &val_b);
