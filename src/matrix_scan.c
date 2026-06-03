@@ -78,7 +78,7 @@ void set_mux_row(uint8_t addr) {
 	}
 	
 	for (uint8_t i = 0; i < board_config.num_row_addr_pins; ++i) {
-		uint8_t state = !((local_addr >> i) & 0x01);
+		uint8_t state = (local_addr >> i) & 0x01;
 		set_gpio_state(board_config.row_addr_pins[i], state);
 	}
 }
@@ -100,7 +100,7 @@ void set_mux_col(uint8_t addr) {
 	}
 	
 	for (uint8_t i = 0; i < board_config.num_col_addr_pins; ++i) {
-		uint8_t state = !((local_addr >> i) & 0x01);
+		uint8_t state = (local_addr >> i) & 0x01;
 		set_gpio_state(board_config.col_addr_pins[i], state);
 	}
 }
