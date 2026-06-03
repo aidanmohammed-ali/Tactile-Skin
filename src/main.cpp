@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <stm32f4xx_hal.h>
 
+#define RUN_HARDWARE_TEST 0
+
 extern "C" {
 	#include "usbd_core.h"
 	#include "usbd_cdc.h"
@@ -72,11 +74,12 @@ extern "C" void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
  * @param data_val 16-bit data value to write to the register.
  */
 void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t cs_pin, uint16_t reg_addr, uint16_t data_val) {
-	uint16_t tx_command = 0xE000 | (reg_addr & 0x03FF);
+	alignas(2) uint16_t tx_buf[2];
+	tx_buf[0] = (uint16_t)(0xE000 | (reg_addr & 0x03FF));
+	tx_buf[1] = data_val;
 	
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(hspi, (uint8_t*)&tx_command, 1, 10);
-	HAL_SPI_Transmit(hspi, (uint8_t*)&data_val, 1, 10);
+	HAL_SPI_Transmit(hspi, (uint8_t*)tx_buf, 2, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
 }
 
@@ -89,15 +92,17 @@ void AD7142_Write_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t c
  * @retval Value read from the AD7142 register.
  */
 uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_t cs_pin, uint16_t reg_addr) {
-	uint16_t tx_command = 0xE400 | (reg_addr & 0x03FF);
-	uint16_t rx_val = 0;
+	alignas(2) uint16_t tx_buf[2];
+	alignas(2) uint16_t rx_buf[2] = {0, 0};
+	tx_buf[0] = (uint16_t)(0xE400 | (reg_addr & 0x03FF));
+	tx_buf[1] = 0x0000;
 	
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(hspi, (uint8_t*)&tx_command, 1, 10);
-	HAL_SPI_Receive(hspi, (uint8_t*)&rx_val, 1, 10);
+	for(volatile int d = 0; d < 50; ++d);
+	HAL_SPI_TransmitReceive(hspi, (uint8_t*)tx_buf, (uint8_t*)rx_buf, 2, 10);
 	HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
 	
-	return rx_val;
+	return rx_buf[1];
 }
 
 /**
@@ -106,20 +111,30 @@ uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_
  * @param val_b Pointer to location of second value to be read.
  */
 extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
-	uint16_t reg_addr = 0x00B + current_column;
-	uint16_t tx_command = 0xE400 | (reg_addr & 0x03FF);
+	alignas(2) uint16_t tx_buf[2];
+	alignas(2) uint16_t rx_buf_a[2] = {0, 0};
+	alignas(2) uint16_t rx_buf_b[2] = {0, 0};
 	
-	// Read sensor A
+	tx_buf[0] = (uint16_t)(0xE400 | ((0x00B + current_column) & 0x03FF));
+	tx_buf[1] = 0x0000;
+	
+	// CDC A
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi1, (uint8_t*)&tx_command, 1, 10);
-	HAL_SPI_Receive(&hspi1, (uint8_t*)val_a, 1, 10);
+	for(volatile int d=0; d<50; d++);
+	HAL_SPI_TransmitReceive(&hspi1, (uint8_t*)tx_buf, (uint8_t*)rx_buf_a, 2, 10);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+	*val_a = rx_buf_a[1];
 	
-	// Read sensor B
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi2, (uint8_t*)&tx_command, 1, 10);
-	HAL_SPI_Receive(&hspi2, (uint8_t*)val_b, 1, 10);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+	// CDC B (Only if it exists)
+	if (cdc_b_hardware_present) {
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+		for(volatile int d=0; d<50; d++);
+		HAL_SPI_TransmitReceive(&hspi2, (uint8_t*)tx_buf, (uint8_t*)rx_buf_b, 2, 10);
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+		*val_b = rx_buf_b[1];
+	} else {
+		*val_b = 0;
+	}
 }
 
 /**
@@ -238,7 +253,7 @@ void Run_Matrix_Calibration(void) {
 	capture_calibration_frame(weight_high, 16);
 	
 	// Compute curve parameters globally
-	float y_targets[3] = { 0.0f, 100.0f, 500.0f };
+	float y_targets[3] = { 0.0f, 32768.0f, 65535.0f };
 	uint16_t *x_samples[3] = { weight_low, weight_mid, weight_high };
 	tactile_fit_curve(x_samples, y_targets, 128);
 	
@@ -248,17 +263,140 @@ void Run_Matrix_Calibration(void) {
 	free(weight_high);
 }
 
+/**
+ * @brief Tells the AD7142 to perform exactly one scan of the current row.
+ */
+void trigger_AD7142(void) {
+	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0970);
+}
+
+/**
+ * @brief Halts the MCU until the AD7142 physical interrupt pin fires.
+ */
+void wait_for_AD7142(void) {
+	cdc_a_conversion_complete = 0;
+	uint32_t sync_timeout = HAL_GetTick();
+	while (cdc_a_conversion_complete == 0) {
+		if (HAL_GetTick() - sync_timeout > 5) {
+			break;
+		}
+	}
+}
+
 int main(void) {
 	// Initialise STM32
 	HAL_Init();
+	HAL_Delay(1000);
 	SystemClock_Config();	
 	DWT_Delay_Init();
+
+#if RUN_HARDWARE_TEST == 1
+	// Setup pins
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
 	
+	// SPI1
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	GPIO_InitStruct.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_7; // CS, SCK, MOSI
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	GPIO_InitStruct.Pin = GPIO_PIN_6; // MISO
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	// SPI2
+	GPIO_InitStruct.Pin = GPIO_PIN_15; // CS
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_15; // SCK, MOSI
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	
+	GPIO_InitStruct.Pin = GPIO_PIN_14; // MISO
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	
+	// Set default states
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_15, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+	
+	// Start USB manually
+	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
+	USBD_RegisterClass(&hUsbDeviceFS, USBD_CDC_CLASS);
+	USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS);
+	USBD_Start(&hUsbDeviceFS);
+	HAL_Delay(1000);
+	
+	while (1) {
+		uint16_t tx_cmd = 0xE417;
+		uint16_t id_a = 0;
+		uint16_t id_b = 0;
+		
+		// Manually read CDC A
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+		delay_us(10);
+		for (int i = 15; i >= 0; --i) {
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, (tx_cmd & (1 << i)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+			delay_us(10);
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+			delay_us(10);
+		}
+		for (int i = 15; i >= 0; --i) {
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+			delay_us(10);
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+			if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_SET) { id_a |= (1 << i); }
+			delay_us(10);
+		}
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+		
+		// Manually read CDC B
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+		delay_us(10);
+		for (int i = 15; i >= 0; --i) {
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, (tx_cmd & (1 << i)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+			delay_us(10);
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+			delay_us(10);
+		}
+		for (int i = 15; i >= 0; --i) {
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
+			delay_us(10);
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+			if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14) == GPIO_PIN_SET) { id_b |= (1 << i); }
+			delay_us(10);
+		}
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+		
+		// Print result
+		char report[256];
+		int len = snprintf(report, sizeof(report), 
+							"\r\n--- BIT-BANG HARDWARE DIAGNOSTIC ---\r\n"
+							"CDC A (PA4/5/6/7)        ID: 0x%04X\r\n"
+							"CDC B (PA15, PB13/14/15) ID: 0x%04X\r\n"
+							"------------------------------------\r\n",
+							id_a, id_b);
+		
+		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+		
+		if (hcdc_main != NULL && hcdc_main->TxState == 0) {
+			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)report, len);
+			USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+		}
+		
+		HAL_Delay(1000);
+	}
+#else
 	// Initialise peripheral ports
 	MX_GPIO_Init();
 	MX_SPI1_Init();
 	MX_SPI2_Init();
-	
 	AD7142_Init();
 	
 	// Initialise and start the native USB CDC Virtual COM Port stack
@@ -284,21 +422,20 @@ int main(void) {
 	skin_config.set_row_func = set_mux_row;
 	skin_config.set_col_func = set_cdc_channel;
 	
+	skin_config.trigger_scan_func = trigger_AD7142;
+	skin_config.wait_ready_func = wait_for_AD7142;
+	
 	matrix_init(&skin_config);
 	
 	// Configure signal processing parameters
 	curve_params_t skin_curves[128];
 	
 	proc_config_t skin_proc = {};
-	// TODO: Assign actual values
-	skin_proc.noise_threshold = 50;
-	skin_proc.sensitivity = 100;
-	skin_proc.max_output = 4095;
+	skin_proc.noise_threshold = 2000;
+	skin_proc.max_output = 65535;
 	skin_proc.curves = skin_curves;
 	
 	tactile_proc_init(&skin_proc);
-	
-	Run_Matrix_Calibration();
 	
 	// Frame buffers
 	uint16_t sensor_data[128] = {0};
@@ -309,56 +446,62 @@ int main(void) {
 	cdc_a_conversion_complete = 0;
 	cdc_b_conversion_complete = 0;
 	
+	uint32_t last_heartbeat = 0;
+	bool boot_msg_sent = false;
+	
 	while (1) {
-		if (incoming_cal_cmd == 0x1F) {
-			incoming_cal_cmd = 0x00;
-			Run_Matrix_Calibration();
-			Clear_CDC_Interrupts();
-			cdc_a_conversion_complete = 0;
-			cdc_b_conversion_complete = 0;
-			continue;
+		/** DEBUG DIAGNOSTIC
+		uint16_t id_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x017);
+		uint16_t id_b = 0xFFFF;
+		
+		if (cdc_b_hardware_present) {
+			id_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x017);
 		}
 		
-		while (cdc_a_conversion_complete == 0 || (cdc_b_hardware_present && cdc_b_conversion_complete == 0)) {
-			// Idle until callback
-			// Check for reset
+		char id_msg[128];
+		int len = snprintf(id_msg, sizeof(id_msg), "SPI Diagnostic -> CDC A ID: 0x%04X | CDC B ID: 0x%04X\r\n", id_a, id_b);
+		
+		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+		if (hcdc_main != NULL && hcdc_main->TxState == 0) {
+			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)id_msg, len);
+			USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+		}
+		
+		HAL_Delay(500);
+		**/
+		
+		if (incoming_cal_cmd == 0x10 || incoming_cal_cmd == 0x1F) {
+			if (incoming_cal_cmd == 0x10) {
+				Run_Matrix_Calibration();
+				Clear_CDC_Interrupts();
+				cdc_a_conversion_complete = 0;
+				cdc_b_conversion_complete = 0;
+				continue;
+			}
+			
 			if (incoming_cal_cmd == 0x1F) {
-				break;
+				incoming_cal_cmd = 0x00;
+				tactile_proc_init(&skin_proc);
+				continue;
 			}
-		}
+		} else {
 		
-		// Ensure both CDCs are fully done converting
-		uint8_t cdc_a_done = 0;
-		uint8_t cdc_b_done = 0;
+			matrix_scan_parallel(sensor_data);
+			tactile_process_frame(sensor_data, processed_data, 128);
 		
-		while (!cdc_a_done || !cdc_b_done) {
-			if (!cdc_a_done) {
-				uint16_t status_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x00A);
-				if (status_a & 0x0080) {
-					cdc_a_done = 1;
-				}
-			}
-			if (!cdc_b_done) {
-				if (cdc_b_hardware_present) {
-					uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
-					if (status_b & 0x0080) {
-						cdc_b_done = 1;
-					}
-				} else {
-					cdc_b_done = 1;
+			static uint32_t last_print_time = 0;
+			if (HAL_GetTick() - last_print_time > 50) {
+				last_print_time = HAL_GetTick();
+				
+				USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+				if (hcdc_main != NULL && hcdc_main->TxState == 0) {
+					USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)processed_data, 256);
+					USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 				}
 			}
 		}
-		
-		cdc_a_conversion_complete = 0;
-		cdc_b_conversion_complete = 0;
-		
-		matrix_scan_parallel(sensor_data);
-		tactile_process_frame(sensor_data, processed_data, 128);
-		
-		USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)processed_data, 256);
-		USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 	}
+#endif
 }
 
 /**
@@ -479,21 +622,20 @@ void MX_GPIO_Init(void) {
  * @brief Initialise SPI1 for CDC1.
  */
 void MX_SPI1_Init(void) {
+	__HAL_RCC_SPI1_CLK_ENABLE();
+	
 	hspi1.Instance = SPI1;
 	
 	// Configuration for SPI
 	hspi1.Init.Mode = SPI_MODE_MASTER;
 	hspi1.Init.Direction = SPI_DIRECTION_2LINES;
 	hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
-	hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+	hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
+	hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
 	hspi1.Init.NSS = SPI_NSS_SOFT;
 	
 	// Set speed limit
-	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
-	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
 	
 	// Physically apply configuration
 	if (HAL_SPI_Init(&hspi1) != HAL_OK) {
@@ -505,21 +647,20 @@ void MX_SPI1_Init(void) {
  * @brief Initialise SPI2 for CDC2.
  */
 void MX_SPI2_Init(void) {
+	__HAL_RCC_SPI2_CLK_ENABLE();
+	
 	hspi2.Instance = SPI2;
 	
 	// Configuration for SPI
 	hspi2.Init.Mode = SPI_MODE_MASTER;
 	hspi2.Init.Direction = SPI_DIRECTION_2LINES;
 	hspi2.Init.DataSize = SPI_DATASIZE_16BIT;
-	hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-	hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+	hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
+	hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
 	hspi2.Init.NSS = SPI_NSS_SOFT;
 	
 	// Set speed limit
 	hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
-	hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-	hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
-	hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
 	
 	// Physically apply configuration
 	if (HAL_SPI_Init(&hspi2) != HAL_OK) {
@@ -569,8 +710,8 @@ void AD7142_Init(void) {
 		0x4000, // STAGEx_CONNECTION[13:7]
 		0x0000, // STAGEx_AFE_OFFSET
 		0x2424, // STAGEx_SENSITIVITY
-		0x0640, // STAGEx_OFFSET_LOW
-		0x0640, // STAGEx_OFFSET_HIGH
+		0x0F00, // STAGEx_OFFSET_LOW
+		0x0F00, // STAGEx_OFFSET_HIGH
 		0x07D0, // STAGEx_OFFSET_HIGH_CLAMP
 		0x07D0  // STAGEx_OFFSET_LOW_CLAMP
 	};
