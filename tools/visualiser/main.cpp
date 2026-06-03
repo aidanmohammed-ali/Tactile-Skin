@@ -316,7 +316,17 @@ int main() {
 		}
 		
 		if (hardware_online) {
-			ReadSerialFrame(serial, current_frame);
+			if (wizard_step == STEP_COMPLETE) {
+				if (!ReadSerialFrame(serial, current_frame)) {
+					// Handle data sync errors
+				}
+			} else {
+#if defined(_WIN32)
+				PurgeComm(serial, PURGE_RXCLEAR);
+#else
+				tcflush(serial, TCIFLUSH);
+#endif
+			}
 		} else {
 			// Simulation Mode
 			simulation_time += GetFrameTime();
@@ -333,7 +343,7 @@ int main() {
 					// Gaussian distribution
 					float intensity_curve = std::exp(-distance_squared / 3.5f);
 					
-					current_frame.channels[r * COLS + c] = static_cast<uint16_t>(intensity_curve * 4000.0f);
+					current_frame.channels[r * COLS + c] = static_cast<uint16_t>(intensity_curve * 65535.0f);
 				}
 			}
 		}
@@ -346,11 +356,11 @@ int main() {
 		for (int r = 0; r < ROWS; ++r) {
 			for (int c = 0; c < COLS; ++c) {
 				uint16_t raw_val = current_frame.channels[r * COLS + c];
-				if (raw_val > 4095) {
-					raw_val = 4095;
+				if (raw_val > 65535) {
+					raw_val = 65535;
 				}
 				
-				uint8_t intensity = (raw_val * 255) / 4095;
+				uint8_t intensity = (raw_val * 255) / 65535;
 				
 				uint8_t red_channel = intensity;
 				uint8_t green_channel = 255 - intensity;
@@ -358,6 +368,12 @@ int main() {
 				Color cell_color = { red_channel, green_channel, 0, 255 };
 				
 				DrawRectangle(c * CELL_SIZE, (r * CELL_SIZE) + BAR_HEIGHT, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
+				
+				float normalised = (float)raw_val / 65535.0f;
+				const char* val_text = TextFormat("%.2f", normalised);
+				int text_w = MeasureText(val_text, 20);
+				DrawText(val_text, (c * CELL_SIZE) + (CELL_SIZE / 2) - (text_w / 2), 
+									(r * CELL_SIZE) + BAR_HEIGHT + (CELL_SIZE / 2) - 10, 20, WHITE);
 			}
 		}
 		
