@@ -1,0 +1,68 @@
+vision_node:
+  ros__parameters:
+    source: "http://192.168.213.190:3588/video"
+    camera_source_store: ""
+    frame_width: 1280
+    frame_height: 720
+    publish_rate_hz: 10.0
+    detect_on_timer: false
+    weights: ""
+    calibration: ""
+    hole_pitch_mm: 25.0
+    dictionary: "DICT_4X4_50"
+    marker_size_grid: 1.6
+    marker_margin_grid: -1.4
+    refine_holes: true
+    image_size: 640
+    device: "auto"
+    confidence: 0.1
+    anchor: "center"
+
+hardware_arm_node:
+  ros__parameters:
+    device_name: "/dev/ttyUSB0"
+    auto_connect: false
+    motor_ids: [11, 12, 13, 14, 15]
+    default_speed: 100
+    default_accel: 20
+    gripper_open_position: 1800
+    gripper_close_position: 2400
+    state_rate_hz: 5.0
+    interpolation_step_sec: 0.10
+    default_move_duration_sec: 1.2
+
+sim_arm_node:
+  ros__parameters:
+    gripper_open_position: 1800
+    gripper_close_position: 2400
+    state_rate_hz: 5.0
+    interpolation_step_sec: 0.10
+    default_move_duration_sec: 1.2
+
+pick_place_node:
+  ros__parameters:
+    grid_center_x: 8.0
+    grid_center_y: 2.0
+    grid_pitch_m: 0.025
+    pick_z: 0.02
+    carry_z: 0.10
+    retreat_z: 0.12
+    pick_angle_rad: -1.0
+    approach_duration_sec: 0.8
+    descend_duration_sec: 0.5
+    lift_duration_sec: 0.6
+    transfer_duration_sec: 0.9
+    retreat_duration_sec: 0.6
+    gripper_wait_sec: 0.4
+    detection_timeout_sec: 3.0
+    move_settle_sec: 0.15
+    gripper_open_position: 1800
+    gripper_close_position: 2400
+
+operator_ui_node:
+  ros__parameters:
+    camera_source: "http://192.168.213.190:3588/video"
+    camera_source_store: ""
+    confidence: 0.1
+    gripper_open_position: 1800
+    gripper_close_position: 2400

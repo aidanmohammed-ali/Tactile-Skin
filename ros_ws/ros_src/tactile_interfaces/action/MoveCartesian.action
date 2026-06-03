@@ -1,0 +1,10 @@
+tactile_interfaces/ArmPose target_pose
+float64 duration_sec
+---
+bool success
+string message
+tactile_interfaces/ArmPose final_pose
+---
+string stage
+float32 progress
+tactile_interfaces/ArmPose current_pose

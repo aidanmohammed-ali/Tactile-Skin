@@ -1,0 +1,7 @@
+bool recalibrate
+bool include_annotated_frame
+---
+bool success
+tactile_interfaces/BlockDetection detection
+sensor_msgs/Image annotated_frame
+string message

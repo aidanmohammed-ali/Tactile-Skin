@@ -1,0 +1,7 @@
+bool save
+---
+bool success
+int32 marker_count
+int32 hole_count
+float64 median_grid_error
+string message

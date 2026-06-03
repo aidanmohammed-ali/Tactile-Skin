@@ -1,0 +1,9 @@
+builtin_interfaces/Time stamp
+bool connected
+bool busy
+string mode
+string current_port
+tactile_interfaces/ArmPose current_pose
+float64[] joint_positions
+int32 gripper_position
+string last_error

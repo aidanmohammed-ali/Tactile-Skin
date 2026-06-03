@@ -1,0 +1,2 @@
+tactile_interfaces/ArmPose target_pose
+float64 duration_sec

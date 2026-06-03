@@ -1,0 +1,10 @@
+tactile_interfaces/ArmPose place_pose
+bool recalibrate_before_pick
+---
+bool success
+string message
+tactile_interfaces/BlockDetection detection
+---
+string stage
+float32 progress
+tactile_interfaces/BlockDetection detection

@@ -1,0 +1,1 @@
+This ros_ws floder is the workspace used for ROS2 application.
