@@ -17,7 +17,6 @@ extern "C" {
 	#include "usbd_cdc.h"
 	
 	#include "matrix_scan.h"
-	#include "tactile_proc.h"
 	
 	extern USBD_HandleTypeDef hUsbDeviceFS;
 	extern USBD_DescriptorsTypeDef FS_Desc;
@@ -30,11 +29,12 @@ SPI_HandleTypeDef hspi2; // CDC B
 volatile uint8_t current_column = 0;
 volatile uint8_t cdc_a_conversion_complete = 0;
 volatile uint8_t cdc_b_conversion_complete = 0;
-volatile uint8_t incoming_cal_cmd = 0x00;
 
 bool cdc_b_hardware_present = false;
 
 int8_t (*original_st_receive_func)(uint8_t*, uint32_t*) = NULL;
+
+uint16_t sensor_data[128] = {0};
 
 /**
  * @brief Structure to pair an AD7142 register address with its configuration value.
@@ -60,9 +60,9 @@ void Clear_CDC_Interrupts(void);
 extern "C" void set_gpio_state(uint8_t gpio_pin, uint8_t state) {
 	GPIO_PinState s = (state) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 	
-	if (gpio_pin == 0) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, s);
-	if (gpio_pin == 1) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, s);
-	if (gpio_pin == 2) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, s);
+	if (gpio_pin == 0) HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, s);
+	if (gpio_pin == 1) HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, s);
+	if (gpio_pin == 2) HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, s);
 }
 
 /**
@@ -127,10 +127,10 @@ extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	
 	// CDC B (Only if it exists)
 	if (cdc_b_hardware_present) {
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
 		for(volatile int d=0; d<50; d++);
 		HAL_SPI_TransmitReceive(&hspi2, (uint8_t*)tx_buf, (uint8_t*)rx_buf_b, 2, 10);
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 		*val_b = rx_buf_b[1];
 	} else {
 		*val_b = 0;
@@ -166,121 +166,29 @@ extern "C" void delay_us(uint16_t us) {
 }
 
 /**
- * @brief Scan the tactile matrix multiple times and saves the averaged data.
- * @param buffer Pointer to the calibration destination array.
- * @param num_averages Number of frame to average (use power of 2).
- */
-void capture_calibration_frame(uint16_t *buffer, uint8_t num_averages) {
-	// Clear buffer
-	for (int i = 0; i < 128; ++i) {
-		buffer[i] = 0;
-	}
-	
-	// Allocate temporary buffers
-	uint32_t *accumulator = (uint32_t*)calloc(128, sizeof(uint32_t));
-	uint16_t *single_frame = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	
-	// Scan matrix
-	for (uint8_t i = 0; i < num_averages; ++i) {
-		matrix_scan_parallel(single_frame);
-		for (int j = 0; j < 128; ++j) {
-			accumulator[j] += single_frame[j];
-		}
-		HAL_Delay(5);
-	}
-	
-	// Compute average
-	for (int i = 0; i < 128; ++i) {
-		buffer[i] = (uint16_t)(accumulator[i] / num_averages);
-	}
-	
-	free(accumulator);
-	free(single_frame);
-}
-
-/**
- * @brief Custom intercept hook that captures wizard tokens.
- * @param buf Pointer to the raw incoming USB Virtual COM Port data payload buffer.
- * @param len Pointer to the 32-bit unsigned integer tracking the received packet length in bytes.
- * @retval USBD_OK if the data was successfully passed down to the handler, otherwise error code.
- */
-int8_t Custom_USB_Intercept(uint8_t *buf, uint32_t *len) {
-	if (*len == 1) {
-		incoming_cal_cmd = buf[0];
-	}
-	
-	if (original_st_receive_func != NULL) {
-		return original_st_receive_func(buf, len);
-	}
-	return USBD_OK;
-}
-
-/**
- * @brief Traps the MCU until a specific validation byte arrives from the visualiser.
- * @param expected_byte The exact character payload.
- */
-void Wait_For_Visualiser_Token(uint8_t expected_byte) {
-	while (1) {
-		if (incoming_cal_cmd == expected_byte) {
-			incoming_cal_cmd = 0x00;
-			break;
-		}
-		HAL_Delay(1);
-	}
-}
-
-/**
- * @brief Execute the full curve fitting calibration sequence.
- * @note This blocks normal matrix streaming until all three weight phases complete.
- */
-void Run_Matrix_Calibration(void) {
-	// Allocate local sampling buffers
-	uint16_t *weight_low = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	uint16_t *weight_mid = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	uint16_t *weight_high = (uint16_t*)malloc(128 * sizeof(uint16_t));
-	
-	// Trap and sample each stage dynamically
-	Wait_For_Visualiser_Token(0x10);
-	incoming_cal_cmd = 0x00;
-	capture_calibration_frame(weight_low, 16);
-	
-	Wait_For_Visualiser_Token(0x11);
-	incoming_cal_cmd = 0x00;
-	capture_calibration_frame(weight_mid, 16);
-	
-	Wait_For_Visualiser_Token(0x12);
-	incoming_cal_cmd = 0x00;
-	capture_calibration_frame(weight_high, 16);
-	
-	// Compute curve parameters globally
-	float y_targets[3] = { 0.0f, 32768.0f, 65535.0f };
-	uint16_t *x_samples[3] = { weight_low, weight_mid, weight_high };
-	tactile_fit_curve(x_samples, y_targets, 128);
-	
-	// Clean memory allocations safely
-	free(weight_low);
-	free(weight_mid);
-	free(weight_high);
-}
-
-/**
  * @brief Tells the AD7142 to perform exactly one scan of the current row.
  */
 void trigger_AD7142(void) {
-	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0970);
+	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0170);
+	
+	if (cdc_b_hardware_present) {
+		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x000, 0x0170);
+	}
 }
 
 /**
  * @brief Halts the MCU until the AD7142 physical interrupt pin fires.
  */
 void wait_for_AD7142(void) {
-	cdc_a_conversion_complete = 0;
-	uint32_t sync_timeout = HAL_GetTick();
-	while (cdc_a_conversion_complete == 0) {
-		if (HAL_GetTick() - sync_timeout > 5) {
-			break;
-		}
-	}
+	delay_us(1500);
+	Clear_CDC_Interrupts();
+}
+
+/**
+ * @brief Inverts the row scanning to match the visualiser mapping.
+ */
+void set_mux_row_inverted(uint8_t addr) {
+	set_mux_row(7 - addr);
 }
 
 int main(void) {
@@ -309,20 +217,20 @@ int main(void) {
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
 	// SPI2
-	GPIO_InitStruct.Pin = GPIO_PIN_15; // CS
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-	
-	GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_15; // SCK, MOSI
+	GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_15; // CS, SCK, MOSI
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 	
 	GPIO_InitStruct.Pin = GPIO_PIN_14; // MISO
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 	
 	// Set default states
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_15, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12 | GPIO_PIN_13, GPIO_PIN_SET);
 	
 	// Start USB manually
 	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
@@ -356,7 +264,7 @@ int main(void) {
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 		
 		// Manually read CDC B
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
 		delay_us(10);
 		for (int i = 15; i >= 0; --i) {
 			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
@@ -372,14 +280,14 @@ int main(void) {
 			if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14) == GPIO_PIN_SET) { id_b |= (1 << i); }
 			delay_us(10);
 		}
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 		
 		// Print result
 		char report[256];
 		int len = snprintf(report, sizeof(report), 
 							"\r\n--- BIT-BANG HARDWARE DIAGNOSTIC ---\r\n"
 							"CDC A (PA4/5/6/7)        ID: 0x%04X\r\n"
-							"CDC B (PA15, PB13/14/15) ID: 0x%04X\r\n"
+							"CDC B (PB12/13/14/15)    ID: 0x%04X\r\n"
 							"------------------------------------\r\n",
 							id_a, id_b);
 		
@@ -405,9 +313,6 @@ int main(void) {
 	USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS);
 	USBD_Start(&hUsbDeviceFS);
 	
-	original_st_receive_func = USBD_Interface_fops_FS.Receive;
-	USBD_Interface_fops_FS.Receive = Custom_USB_Intercept;
-	
 	// Configure tactile geometry
 	matrix_config_t skin_config = {};
 	skin_config.num_row_addr_pins = 3;
@@ -419,27 +324,13 @@ int main(void) {
 	skin_config.row_addr_pins[1] = 1;
 	skin_config.row_addr_pins[2] = 2;
 	
-	skin_config.set_row_func = set_mux_row;
+	skin_config.set_row_func = set_mux_row_inverted;
 	skin_config.set_col_func = set_cdc_channel;
 	
 	skin_config.trigger_scan_func = trigger_AD7142;
 	skin_config.wait_ready_func = wait_for_AD7142;
 	
 	matrix_init(&skin_config);
-	
-	// Configure signal processing parameters
-	curve_params_t skin_curves[128];
-	
-	proc_config_t skin_proc = {};
-	skin_proc.noise_threshold = 2000;
-	skin_proc.max_output = 65535;
-	skin_proc.curves = skin_curves;
-	
-	tactile_proc_init(&skin_proc);
-	
-	// Frame buffers
-	uint16_t sensor_data[128] = {0};
-	uint16_t processed_data[128] = {0};
 	
 	// Clear initial startup triggers
 	Clear_CDC_Interrupts();
@@ -455,7 +346,7 @@ int main(void) {
 		uint16_t id_b = 0xFFFF;
 		
 		if (cdc_b_hardware_present) {
-			id_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x017);
+			id_b = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x017);
 		}
 		
 		char id_msg[128];
@@ -470,34 +361,16 @@ int main(void) {
 		HAL_Delay(500);
 		**/
 		
-		if (incoming_cal_cmd == 0x10 || incoming_cal_cmd == 0x1F) {
-			if (incoming_cal_cmd == 0x10) {
-				Run_Matrix_Calibration();
-				Clear_CDC_Interrupts();
-				cdc_a_conversion_complete = 0;
-				cdc_b_conversion_complete = 0;
-				continue;
-			}
+		matrix_scan_parallel(sensor_data);
+		
+		static uint32_t last_print_time = 0;
+		if (HAL_GetTick() - last_print_time > 50) {
+			last_print_time = HAL_GetTick();
 			
-			if (incoming_cal_cmd == 0x1F) {
-				incoming_cal_cmd = 0x00;
-				tactile_proc_init(&skin_proc);
-				continue;
-			}
-		} else {
-		
-			matrix_scan_parallel(sensor_data);
-			tactile_process_frame(sensor_data, processed_data, 128);
-		
-			static uint32_t last_print_time = 0;
-			if (HAL_GetTick() - last_print_time > 50) {
-				last_print_time = HAL_GetTick();
-				
-				USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-				if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-					USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)processed_data, 256);
-					USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-				}
+			USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+			if (hcdc_main != NULL && hcdc_main->TxState == 0) {
+				USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)sensor_data, 256);
+				USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 			}
 		}
 	}
@@ -561,7 +434,7 @@ void MX_GPIO_Init(void) {
 	__HAL_RCC_GPIOB_CLK_ENABLE();
 	
 	// Set default starting states for MUX
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2, GPIO_PIN_RESET);
 	
 	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -569,18 +442,29 @@ void MX_GPIO_Init(void) {
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	
 	// Physically apply configuration
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
-	// Set default starting states for CS
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_15, GPIO_PIN_SET);
+	// Set default starting states for CS (SPI1)
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 	
-	GPIO_InitStruct.Pin = GPIO_PIN_4 | GPIO_PIN_15;
+	GPIO_InitStruct.Pin = GPIO_PIN_4;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	
 	// Physically apply configuration
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+	// Set default starting states for CS (SPI2)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+	
+	GPIO_InitStruct.Pin = GPIO_PIN_12;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	
+	// Physically apply configuration
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 	
 	// Configure INT
 	GPIO_InitStruct.Pin = GPIO_PIN_3 | GPIO_PIN_8;
@@ -692,7 +576,7 @@ void AD7142_Init(void) {
 	}
 	
 	// Probe CDC2
-	uint16_t cdc_b_id = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x017);
+	uint16_t cdc_b_id = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x017);
 	
 	if (cdc_b_id != 0x0000 && cdc_b_id != 0xFFFF) {
 		cdc_b_hardware_present = true;
@@ -700,7 +584,7 @@ void AD7142_Init(void) {
 	
 	for (int i = 0; i < num_registers; ++i) {
 		if (cdc_b_hardware_present) {
-			AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, bank1_table[i].reg_addr, bank1_table[i].reg_val);
+			AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, bank1_table[i].reg_addr, bank1_table[i].reg_val);
 		}
 	}
 	
@@ -708,7 +592,7 @@ void AD7142_Init(void) {
 	uint16_t used_reg_vals[] = {
 		0x0001, // STAGEx_CONNECTION[6:0]
 		0x4000, // STAGEx_CONNECTION[13:7]
-		0x0000, // STAGEx_AFE_OFFSET
+		0x0B00, // STAGEx_AFE_OFFSET
 		0x2424, // STAGEx_SENSITIVITY
 		0x0F00, // STAGEx_OFFSET_LOW
 		0x0F00, // STAGEx_OFFSET_HIGH
@@ -728,19 +612,18 @@ void AD7142_Init(void) {
 	};
 	
 	int stage = 0;
+	uint16_t val;
 	for (uint16_t addr = 0x080; addr < 0x0E0; ) {
 		for (uint16_t i = 0; i < 8; ++i) {
 			if (stage < 8) {
-				uint16_t val;
-				
 				switch (i) {
 					case 0:
-						val = 0x3FFF ^ (used_reg_vals[i] << (2 * stage));
+						val = 0x3FFF ^ (used_reg_vals[0] << (2 * stage));
 						val = 0x3FFF & val;
 						break;
 						
 					case 1:
-						val = 0x3FFF ^ (used_reg_vals[i] >> (2 * stage));
+						val = 0x3FFF ^ (used_reg_vals[1] >> (2 * stage));
 						val = 0x3FFE | val;
 						val = 0x3FFF & val;
 						break;
@@ -758,13 +641,13 @@ void AD7142_Init(void) {
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val);
 				
 				if (cdc_b_hardware_present) {
-					AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, val);
+					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, val);
 				}
 			} else {
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, unused_reg_vals[i]);
 				
 				if (cdc_b_hardware_present) {
-					AD7142_Write_Reg(&hspi2, GPIOA, GPIO_PIN_15, addr, unused_reg_vals[i]);
+					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, unused_reg_vals[i]);
 				}
 			}
 			addr++;
@@ -782,7 +665,7 @@ void Clear_CDC_Interrupts(void) {
 	(void)status_a;
 	
 	if (cdc_b_hardware_present) {
-		uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOA, GPIO_PIN_15, 0x00A);
+		uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x00A);
 		(void)status_b;
 	}
 }
