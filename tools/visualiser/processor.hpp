@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdint>
+#include <algorithm>
 
 /**
  * @brief Handles tactile matrix low-pass filtering and multi-point quadratic curve fitting calibration.
@@ -45,9 +46,23 @@ public:
 	std::vector<CurveParams> m_curves;
 	std::vector<float> m_smoothedData;
 	
+	std::vector<float> m_history0;
+	std::vector<float> m_history1;
+	std::vector<float> m_history2;
+	std::vector<float> m_history3;
+	std::vector<float> m_history4;
+	
 	std::vector<uint16_t> m_weightLow;
 	std::vector<uint16_t> m_weightMid;
 	std::vector<uint16_t> m_weightHigh;
+	
+	std::vector<float> m_spatialTemp;
+
+private:
+	static constexpr int GRID_WIDTH = 16;
+	static constexpr int GRID_HEIGHT = 8;
+	static constexpr float FILTER_ALPHA = 0.05f;
+	static constexpr float SPATIAL_CENTER_WEIGHT = 0.80f;
 	
 public:
 	/**
@@ -61,9 +76,18 @@ public:
 		
 		m_curves.resize(m_numTaxels);
 		m_smoothedData.resize(m_numTaxels, 0.0f);
+		
+		m_history0.resize(m_numTaxels, 0.0f);
+		m_history1.resize(m_numTaxels, 0.0f);
+		m_history2.resize(m_numTaxels, 0.0f);
+		m_history3.resize(m_numTaxels, 0.0f);
+		m_history4.resize(m_numTaxels, 0.0f);
+		
 		m_weightLow.resize(m_numTaxels, 0);
 		m_weightMid.resize(m_numTaxels, 0);
 		m_weightHigh.resize(m_numTaxels, 0);
+		
+		m_spatialTemp.resize(m_numTaxels, 0.0f);
 		
 		ResetCalibration();
 	}
@@ -126,15 +150,13 @@ public:
 			return;
 		}
 		
-		const float alpha = 0.02f;
+		FilterFrameInterval(rawFrame);	
 		
-		for (int i = 0; i < m_numTaxels; ++i) {
-			// Apply low-pass EMA filter
-			m_smoothedData[i] = (alpha * (float)rawFrame[i]) + ((1.0f - alpha) * m_smoothedData[i]);
-			float x = m_smoothedData[i] / 65535.0f;
+		for (int i = 0; i < m_numTaxels; ++i) {			
+			float x = m_spatialTemp[i] / 65535.0f;
 			
 			if (m_state == STATE_READY) {
-				float zeroed = m_smoothedData[i] - m_curves[i].c;
+				float zeroed = m_spatialTemp[i] - m_curves[i].c;
 				float out = zeroed * m_curves[i].b;
 				
 				if (out < m_noiseThreshold) {
@@ -153,10 +175,15 @@ public:
 
 	/**
 	 * @brief Tare the sensor to reset the baseline to zero.
+	 * @param rawFrame Pointer to the incoming raw buffer.
 	 */
 	void Tare(const uint16_t *rawFrame) {
+		if (rawFrame == nullptr) {
+			return;
+		}
+		
 		for (int i = 0; i < m_numTaxels; ++i) {
-			m_curves[i].c = (float)rawFrame[i];
+			m_curves[i].c = m_spatialTemp[i];
 			m_curves[i].b = 1.0f / (65535.0f - m_curves[i].c);
 			m_curves[i].a = 0.0f;
 		}
@@ -164,6 +191,87 @@ public:
 	}
 
 private:
+	/**
+	 * @brief Core filtering engine covering time-domain median filtering, low-pass and 2D spatial smoothing.
+	 * @param rawFrame Pointer to the incoming raw buffer.
+	 */
+	void FilterFrameInterval(const uint16_t *rawFrame) {
+		for (int i = 0; i < m_numTaxels; ++i) {
+			float rawVal = (float)rawFrame[i];
+			
+			// Median filter
+			m_history4[i] = m_history3[i];
+			m_history3[i] = m_history2[i];
+			m_history2[i] = m_history1[i];
+			m_history1[i] = m_history0[i];
+			m_history0[i] = rawVal;
+			
+			float h0 = m_history0[i];
+			float h1 = m_history1[i];
+			float h2 = m_history2[i];
+			float h3 = m_history3[i];
+			float h4 = m_history4[i];
+			float medianVal;
+			
+			if (h0 > h1) std::swap(h0, h1);
+			if (h2 > h3) std::swap(h2, h3);
+			if (h0 > h2) std::swap(h0, h2);
+			if (h1 > h3) std::swap(h1, h3);
+			if (h1 > h2) std::swap(h1, h2);
+			if (h0 > h4) std::swap(h0, h4);
+			if (h2 > h4) std::swap(h2, h4);
+			if (h1 > h2) std::swap(h1, h2);
+			if (h3 > h4) std::swap(h3, h4);
+			
+			medianVal = h2;
+			
+			// Apply low-pass EMA filter
+			m_smoothedData[i] = (FILTER_ALPHA * medianVal) + ((1.0f - FILTER_ALPHA) * m_smoothedData[i]);
+		}
+		
+		// Spatial smoothing
+		const float neighbourWeight = (1.0f - SPATIAL_CENTER_WEIGHT) / 4.0f;
+		
+		for (int i = 0; i < m_numTaxels; ++i) {
+			int row = i / GRID_WIDTH;
+			int col = i % GRID_WIDTH;
+			
+			float currentVal = m_smoothedData[i];
+			float spatialSum = currentVal * SPATIAL_CENTER_WEIGHT;
+			float missingWeight = 0.0f;
+			
+			if (col > 0) {
+				spatialSum += m_smoothedData[i - 1] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (col < GRID_WIDTH - 1) {
+				spatialSum += m_smoothedData[i + 1] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (row > 0) {
+				spatialSum += m_smoothedData[i - GRID_WIDTH] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (row < GRID_HEIGHT - 1) {
+				spatialSum += m_smoothedData[i + GRID_WIDTH] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (missingWeight > 0.0f) {
+				spatialSum += currentVal * missingWeight;
+			}
+			
+			m_spatialTemp[i] = spatialSum;
+		}
+	}
+	
 	/**
 	 * @brief Solves the Cramer's rule matrix system to generate curve coefficients.
 	 */
