@@ -362,7 +362,7 @@ int main() {
 		DrawRectangle(0, 0, WINDOW_WIDTH, BAR_HEIGHT, Fade(BLACK, 0.95f));
 		DrawLine(0, BAR_HEIGHT - 1, WINDOW_WIDTH, BAR_HEIGHT - 1, GRAY);
 		
-		/**
+		/** LEGACY CURVE CALIBRATION
 		if (processor.m_state == Processor::STATE_UNCALIBRATED) {
 			DrawText("SYSTEM OPERATIONAL", 25, 16, 22, ORANGE);
 			const char *txt = "Press [C] to initiate Multi-Point Calibration Wizard";
