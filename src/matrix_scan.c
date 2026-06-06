@@ -118,14 +118,18 @@ void matrix_scan_parallel(uint16_t* buffer) {
 	
 	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
 		board_config.set_row_func(r);
-		
+				
 		for (uint16_t c = 0; c < half_width; ++c) {
 			board_config.set_col_func(c);
 			
-			if (board_config.settle_time_us > 0) {
-				delay_us(board_config.settle_time_us);
+			if (board_config.trigger_scan_func != NULL) {
+				board_config.trigger_scan_func();
 			}
 			
+			if (board_config.wait_ready_func != NULL) {
+				board_config.wait_ready_func();
+			}
+				
 			uint16_t val_a, val_b;
 			get_sensor_pair(&val_a, &val_b);
 			

@@ -20,7 +20,6 @@ typedef struct {
 /** Processing Configuration **/
 typedef struct {
 	uint16_t noise_threshold;
-	uint16_t sensitivity;
 	uint16_t max_output;
 	curve_params_t *curves;
 } proc_config_t;
