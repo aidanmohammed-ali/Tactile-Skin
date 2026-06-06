@@ -11,6 +11,7 @@ The core software running on the microcontroller, built using PlatformIO. It han
 * `platformio.ini`: The core PlatformIO configuration script.
 
 ### Tools (`/tools`)
+* `/common`: Shared, hardware-agnostic C++ data engine containing the core signal processing logic and GUI rendering requirements.
 * `/visualiser`: A high-performance, cross-platform desktop utility built with Raylib. Features include:
   * **Multi-Instance Isolation:** Run multiple parallel instances side-by-side to monitor independent microcontrollers simultaneously.
   * **Dynamic Port Mapping:** Hot-swap hardware link contexts on-the-fly via an integrated UI selector.
