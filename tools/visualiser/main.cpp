@@ -35,7 +35,7 @@
 // Geometry configuration 
 const int ROWS = 8;
 const int COLS = 16;
-const int CELL_SIZE = 75;
+const int CELL_SIZE = 95;
 const int WINDOW_WIDTH = COLS * CELL_SIZE;
 const int WINDOW_HEIGHT = ROWS * CELL_SIZE;
 const int BAR_HEIGHT = 60;
@@ -344,10 +344,9 @@ int main() {
 				
 				uint8_t intensity = static_cast<uint8_t>(cell_value * 255.0f);
 				
-				uint8_t red_channel = intensity;
-				uint8_t green_channel = 255 - intensity;
+				uint8_t blue_channel = intensity;
 				
-				Color cell_color = { red_channel, green_channel, 0, 255 };
+				Color cell_color = { 0, 0, blue_channel, 255 };
 				
 				DrawRectangle(c * CELL_SIZE, (r * CELL_SIZE) + BAR_HEIGHT, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
 
