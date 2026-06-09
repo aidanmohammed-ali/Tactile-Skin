@@ -61,7 +61,7 @@ public:
 private:
 	static constexpr int GRID_WIDTH = 16;
 	static constexpr int GRID_HEIGHT = 8;
-	static constexpr float FILTER_ALPHA = 0.05f;
+	static constexpr float FILTER_ALPHA = 0.075f;
 	static constexpr float SPATIAL_CENTER_WEIGHT = 0.80f;
 	
 public:
