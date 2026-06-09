@@ -330,6 +330,8 @@ int main(void) {
 	skin_config.trigger_scan_func = trigger_AD7142;
 	skin_config.wait_ready_func = wait_for_AD7142;
 	
+	skin_config.settle_time_us = 10;
+	
 	matrix_init(&skin_config);
 	
 	// Clear initial startup triggers

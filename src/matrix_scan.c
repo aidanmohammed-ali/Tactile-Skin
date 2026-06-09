@@ -136,6 +136,7 @@ void matrix_scan_parallel(uint16_t* buffer) {
 			size_t base_index = (r * board_config.active_cols);
 			buffer[base_index + c] = val_a;
 			buffer[base_index + c + half_width] = val_b;
+			delay_us(board_config.settle_time_us);
 		}
 	}
 }
