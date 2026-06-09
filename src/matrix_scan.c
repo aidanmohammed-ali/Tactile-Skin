@@ -122,6 +122,10 @@ void matrix_scan_parallel(uint16_t* buffer) {
 		for (uint16_t c = 0; c < half_width; ++c) {
 			board_config.set_col_func(c);
 			
+			if (board_config.settle_time_us > 0) {
+				delay_us(board_config.settle_time_us);
+			}
+			
 			if (board_config.trigger_scan_func != NULL) {
 				board_config.trigger_scan_func();
 			}
