@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stm32f4xx_hal.h>
 
 #define RUN_HARDWARE_TEST 0
@@ -35,6 +36,16 @@ bool cdc_b_hardware_present = false;
 int8_t (*original_st_receive_func)(uint8_t*, uint32_t*) = NULL;
 
 uint16_t sensor_data[128] = {0};
+
+// Payload
+#pragma pack(push, 1)
+typedef struct {
+	uint8_t magic_header[4];
+	uint16_t matrix_data[128];
+} serialised_packet_t;
+#pragma pack(pop)
+
+static serialised_packet_t usb_tx_packet;
 
 /**
  * @brief Structure to pair an AD7142 register address with its configuration value.
@@ -199,6 +210,10 @@ int main(void) {
 	DWT_Delay_Init();
 
 #if RUN_HARDWARE_TEST == 1
+	/**
+	 * @brief Hardware bit-bang configuration diagnostics segment.
+	 * @note Leave untouched.
+	 */
 	// Setup pins
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 	__HAL_RCC_GPIOB_CLK_ENABLE();
@@ -339,39 +354,24 @@ int main(void) {
 	cdc_a_conversion_complete = 0;
 	cdc_b_conversion_complete = 0;
 	
-	uint32_t last_heartbeat = 0;
-	bool boot_msg_sent = false;
+	usb_tx_packet.magic_header[0] = 0xDE;
+	usb_tx_packet.magic_header[1] = 0xAD;
+	usb_tx_packet.magic_header[2] = 0xBE;
+	usb_tx_packet.magic_header[3] = 0xEF;
 	
 	while (1) {
-		/** DEBUG DIAGNOSTIC
-		uint16_t id_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x017);
-		uint16_t id_b = 0xFFFF;
-		
-		if (cdc_b_hardware_present) {
-			id_b = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x017);
-		}
-		
-		char id_msg[128];
-		int len = snprintf(id_msg, sizeof(id_msg), "SPI Diagnostic -> CDC A ID: 0x%04X | CDC B ID: 0x%04X\r\n", id_a, id_b);
-		
-		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-		if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)id_msg, len);
-			USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-		}
-		
-		HAL_Delay(500);
-		**/
-		
 		matrix_scan_parallel(sensor_data);
 		
 		static uint32_t last_print_time = 0;
-		if (HAL_GetTick() - last_print_time > 50) {
-			last_print_time = HAL_GetTick();
-			
+		if (HAL_GetTick() - last_print_time > 50) {		
 			USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+			
 			if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-				USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)sensor_data, 256);
+				last_print_time = HAL_GetTick();
+				
+				memcpy(usb_tx_packet.matrix_data, sensor_data, 256);
+				
+				USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)&usb_tx_packet, sizeof(usb_tx_packet));
 				USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 			}
 		}
