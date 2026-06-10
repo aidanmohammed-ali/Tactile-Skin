@@ -66,6 +66,7 @@ private:
 	static constexpr int GRID_HEIGHT = 8;
 	static constexpr float FILTER_ALPHA = 0.09f;
 	static constexpr float SPATIAL_CENTER_WEIGHT = 0.90f;
+	static constexpr float SHARPEN_AMOUNT = 2.0f;
 	
 public:
 	/**
@@ -225,6 +226,24 @@ public:
 			}
 			
 			processedFrame[i] = spatialSum;
+		}
+		
+		// Unsharp Masking
+		for (int i = 0; i < m_numTaxels; ++i) {
+			float original = processedData[i];
+			float blurred = processedFrame[i];
+			
+			float sharpened = original + SHARPEN_AMOUNT * (original - blurred);
+			
+			if (sharpened < 0.0f) {
+				sharpened = 0.0f;
+			}
+			
+			if (sharpened > 1.0f) {
+				sharpened = 1.0f;
+			}
+			
+			processedFrame[i] = sharpened;
 		}
 	}
 
