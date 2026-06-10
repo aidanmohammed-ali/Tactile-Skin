@@ -115,8 +115,17 @@ void matrix_scan_parallel(uint16_t* buffer) {
 	}
 	
 	uint16_t half_width = board_config.active_cols / 2;
+	uint16_t total_steps = (board_config.active_rows * 2) - 2;
 	
-	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
+	for (uint16_t step = 0; step < total_steps; ++step) {
+		uint16_t r;
+		
+		if (step < board_config.active_rows) {
+			r = step;
+		} else {
+			r = (board_config.active_rows - 1) - (step - (board_config.active_rows - 1));
+		}
+		
 		board_config.set_row_func(r);
 		
 		if (board_config.settle_time_us > 0) {
