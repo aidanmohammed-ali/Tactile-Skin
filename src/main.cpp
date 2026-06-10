@@ -365,7 +365,7 @@ int main(void) {
 	skin_config.wait_ready_func = wait_for_AD7142;
 	skin_config.clear_interrupt_func = Clear_CDC_Interrupts;
 	
-	skin_config.settle_time_us = 10;
+	skin_config.settle_time_us = 20;
 	
 	matrix_init(&skin_config);
 	
@@ -581,7 +581,7 @@ void AD7142_Init(void) {
 	// Bank 1
 	ad7142_reg_config_t bank1_table[] = {
 		{0x000, 0x0170}, // PWR_CONTROL
-		{0x001, 0x00FF}, // STAGE_CAL_EN
+		{0x001, 0x0000}, // STAGE_CAL_EN
 		{0x002, 0x0FF0}, // AMB_COMP_CTRL0 (default)
 		{0x003, 0x0140}, // AMB_COMP_CTRL1 (default)
 		{0x004, 0xFFFF}, // AMB_COMP_CTRL2 (default)
@@ -635,6 +635,8 @@ void AD7142_Init(void) {
 	
 	int stage = 0;
 	uint16_t val;
+	uint16_t val1;
+	uint16_t val2;
 	for (uint16_t addr = 0x080; addr < 0x0E0; ) {
 		for (uint16_t i = 0; i < 8; ++i) {
 			if (stage < 8) {
@@ -651,6 +653,7 @@ void AD7142_Init(void) {
 						break;
 						
 					case 2:
+						val = used_reg_vals[i];
 					case 3:						
 					case 4:
 					case 5:
@@ -659,11 +662,19 @@ void AD7142_Init(void) {
 						val = used_reg_vals[i];
 						break;
 				}
+				
+				if (i == 2) {
+					val1 = val + 0x0400;
+					val2 = val;
+				} else {
+					val1 = val;
+					val2 = val;
+				}
 
-				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val);
+				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val1);
 				
 				if (cdc_b_hardware_present) {
-					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, val);
+					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, val2);
 				}
 			} else {
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, unused_reg_vals[i]);
