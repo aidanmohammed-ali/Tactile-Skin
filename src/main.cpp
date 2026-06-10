@@ -180,6 +180,9 @@ extern "C" void delay_us(uint16_t us) {
  * @brief Tells the AD7142 to perform exactly one scan of the current row.
  */
 void trigger_AD7142(void) {
+	cdc_a_conversion_complete = 0;
+	cdc_b_conversion_complete = 0;
+	
 	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0170);
 	
 	if (cdc_b_hardware_present) {
@@ -191,8 +194,24 @@ void trigger_AD7142(void) {
  * @brief Halts the MCU until the AD7142 physical interrupt pin fires.
  */
 void wait_for_AD7142(void) {
-	delay_us(1500);
-	Clear_CDC_Interrupts();
+	uint32_t timeout = 20000;
+	
+	while (cdc_a_conversion_complete == 0 && timeout > 0) {
+		if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_3) == GPIO_PIN_RESET) {
+			break;
+		}
+		timeout--;
+	}
+	
+	if (cdc_b_hardware_present) {
+		timeout = 20000;
+		while (cdc_b_conversion_complete == 0 && timeout > 0) {
+			if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_RESET){
+				break;
+			}
+			timeout--;
+		}
+	}
 }
 
 /**
@@ -344,6 +363,7 @@ int main(void) {
 	
 	skin_config.trigger_scan_func = trigger_AD7142;
 	skin_config.wait_ready_func = wait_for_AD7142;
+	skin_config.clear_interrupt_func = Clear_CDC_Interrupts;
 	
 	skin_config.settle_time_us = 10;
 	

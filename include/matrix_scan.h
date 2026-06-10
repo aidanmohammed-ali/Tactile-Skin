@@ -19,6 +19,7 @@ typedef struct {
 	// Synchronisation Hooks
 	void (*trigger_scan_func)(void);
 	void (*wait_ready_func)(void);
+	void (*clear_interrupt_func)(void);
 	
 	uint8_t use_parallel_scan;
 	

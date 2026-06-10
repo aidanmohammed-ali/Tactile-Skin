@@ -118,21 +118,21 @@ void matrix_scan_parallel(uint16_t* buffer) {
 	
 	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
 		board_config.set_row_func(r);
-				
+		
+		if (board_config.settle_time_us > 0) {
+			delay_us(board_config.settle_time_us * 2);
+		}
+		
+		if (board_config.trigger_scan_func != NULL) {
+			board_config.trigger_scan_func();
+		}
+		
+		if (board_config.wait_ready_func != NULL) {
+			board_config.wait_ready_func();
+		}
+		
 		for (uint16_t c = 0; c < half_width; ++c) {
 			board_config.set_col_func(c);
-			
-			if (board_config.settle_time_us > 0) {
-				delay_us(board_config.settle_time_us);
-			}
-			
-			if (board_config.trigger_scan_func != NULL) {
-				board_config.trigger_scan_func();
-			}
-			
-			if (board_config.wait_ready_func != NULL) {
-				board_config.wait_ready_func();
-			}
 				
 			uint16_t val_a, val_b;
 			get_sensor_pair(&val_a, &val_b);
@@ -141,6 +141,10 @@ void matrix_scan_parallel(uint16_t* buffer) {
 			buffer[base_index + c] = val_a;
 			buffer[base_index + c + half_width] = val_b;
 			delay_us(board_config.settle_time_us);
+		}
+		
+		if (board_config.clear_interrupt_func != NULL) {
+			board_config.clear_interrupt_func();
 		}
 	}
 }
