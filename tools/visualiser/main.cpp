@@ -178,7 +178,7 @@ bool ReadSerialFrame(SerialHandle handle, TactileFrame &frame) {
 	}
 #endif
 
-	uint8_t match_buffer[4] = {0};
+	uint8_t match_buffer[4] = { 0 };
 	
 	while (true) {
 #if defined(_WIN32)
@@ -301,11 +301,11 @@ int main() {
 	GuiSetStyle(DEFAULT, BORDER_COLOR_NORMAL, ColorToInt(GRAY));
 	GuiSetStyle(DEFAULT, BASE_COLOR_NORMAL, ColorToInt({ 55, 55, 55, 255 }));
 		
-	TactileFrame current_frame = {0};
+	TactileFrame current_frame = { 0 };
 	float simulation_time = 0.0f;
 
 	Processor processor(128);
-	float processed_frame[128] = {0.0f};
+	float processed_frame[128] = { 0.0f };
 	
 	// Run loop
 	while (!WindowShouldClose()) {
