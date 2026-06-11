@@ -34,7 +34,7 @@ public:
 	 */
 	struct CurveParams {
 		float a = 0.0f;
-		float b = 0.0f;
+		float b = 1.0f;
 		float c = 0.0f;
 	};
 
@@ -42,8 +42,11 @@ public:
 	int m_numTaxels;
 	WizardState m_state;
 	float m_noiseThreshold;
+	float m_rawDeltaThreshold;
+	float m_maxDelta;
 		
 	std::vector<CurveParams> m_curves;
+	std::vector<float> m_baselines;
 	std::vector<float> m_smoothedData;
 	
 	std::vector<float> m_history0;
@@ -61,8 +64,9 @@ public:
 private:
 	static constexpr int GRID_WIDTH = 16;
 	static constexpr int GRID_HEIGHT = 8;
-	static constexpr float FILTER_ALPHA = 0.05f;
-	static constexpr float SPATIAL_CENTER_WEIGHT = 0.80f;
+	static constexpr float FILTER_ALPHA = 0.09f;
+	static constexpr float SPATIAL_CENTER_WEIGHT = 0.90f;
+	static constexpr float SHARPEN_AMOUNT = 2.0f;
 	
 public:
 	/**
@@ -72,9 +76,12 @@ public:
 	Processor(int num = 128) {
 		m_numTaxels = num;
 		m_state = STATE_UNCALIBRATED;
-		m_noiseThreshold = 0.2f;
+		m_noiseThreshold = 0.16f;
+		m_rawDeltaThreshold = 800.0f;
+		m_maxDelta = 35000.0f;
 		
 		m_curves.resize(m_numTaxels);
+		m_baselines.resize(m_numTaxels, 0.0f);
 		m_smoothedData.resize(m_numTaxels, 0.0f);
 		
 		m_history0.resize(m_numTaxels, 0.0f);
@@ -137,6 +144,8 @@ public:
 			m_curves[i].a = 0.0f;
 			m_curves[i].b = 1.0f;
 			m_curves[i].c = 0.0f;
+			
+			m_baselines[i] = 0.0f;
 		}
 	}
 	
@@ -150,26 +159,91 @@ public:
 			return;
 		}
 		
-		FilterFrameInterval(rawFrame);	
+		FilterFrame(rawFrame);	
+		std::vector<float> processedData(m_numTaxels, 0.0f);
 		
 		for (int i = 0; i < m_numTaxels; ++i) {			
-			float x = m_spatialTemp[i] / 65535.0f;
+			float zeroed = m_smoothedData[i] - m_baselines[i];
 			
-			if (m_state == STATE_READY) {
-				float zeroed = m_spatialTemp[i] - m_curves[i].c;
-				float out = zeroed * m_curves[i].b;
-				
-				if (out < m_noiseThreshold) {
-					out = 0.0f;
-				}
-				if (out > 1.0f) {
-					out = 1.0f;
-				}
-				
-				processedFrame[i] = out;
-			} else {
-				processedFrame[i] = x;
+			if (zeroed < m_rawDeltaThreshold) {
+				zeroed = 0.0f;
 			}
+			
+			float out = zeroed / m_maxDelta;
+			
+			if (out < 0.0f) {
+				out = 0.0f;
+			}
+			
+			if (out < m_noiseThreshold) {
+				out = 0.0f;
+			}
+			
+			if (out > 1.0f) {
+				out = 1.0f;
+			}
+			
+			processedData[i] = out;
+		}
+		
+		// Spatial smoothing
+		const float neighbourWeight = (1.0f - SPATIAL_CENTER_WEIGHT) / 4.0f;
+		
+		for (int i = 0; i < m_numTaxels; ++i) {
+			int row = i / GRID_WIDTH;
+			int col = i % GRID_WIDTH;
+			
+			float currentVal = processedData[i];
+			float spatialSum = currentVal * SPATIAL_CENTER_WEIGHT;
+			float missingWeight = 0.0f;
+			
+			if (col > 0) {
+				spatialSum += processedData[i - 1] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (col < GRID_WIDTH - 1) {
+				spatialSum += processedData[i + 1] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (row > 0) {
+				spatialSum += processedData[i - GRID_WIDTH] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (row < GRID_HEIGHT - 1) {
+				spatialSum += processedData[i + GRID_WIDTH] * neighbourWeight;
+			} else {
+				missingWeight += neighbourWeight;
+			}
+			
+			if (missingWeight > 0.0f) {
+				spatialSum += currentVal * missingWeight;
+			}
+			
+			processedFrame[i] = spatialSum;
+		}
+		
+		// Unsharp Masking
+		for (int i = 0; i < m_numTaxels; ++i) {
+			float original = processedData[i];
+			float blurred = processedFrame[i];
+			
+			float sharpened = original + SHARPEN_AMOUNT * (original - blurred);
+			
+			if (sharpened < 0.0f) {
+				sharpened = 0.0f;
+			}
+			
+			if (sharpened > 1.0f) {
+				sharpened = 1.0f;
+			}
+			
+			processedFrame[i] = sharpened;
 		}
 	}
 
@@ -182,24 +256,23 @@ public:
 			return;
 		}
 		
+		FilterFrame(rawFrame);
+		
 		for (int i = 0; i < m_numTaxels; ++i) {
-			m_curves[i].c = m_spatialTemp[i];
-			m_curves[i].b = 1.0f / (65535.0f - m_curves[i].c);
-			m_curves[i].a = 0.0f;
+			m_baselines[i] = m_smoothedData[i];
 		}
-		m_state = STATE_READY;
 	}
 
 private:
 	/**
-	 * @brief Core filtering engine covering time-domain median filtering, low-pass and 2D spatial smoothing.
+	 * @brief Core filtering engine using 5-tap median filter and an EMA.
 	 * @param rawFrame Pointer to the incoming raw buffer.
 	 */
-	void FilterFrameInterval(const uint16_t *rawFrame) {
+	void FilterFrame(const uint16_t *rawFrame) {
 		for (int i = 0; i < m_numTaxels; ++i) {
 			float rawVal = (float)rawFrame[i];
 			
-			// Median filter
+			// 5-Tap Median filter
 			m_history4[i] = m_history3[i];
 			m_history3[i] = m_history2[i];
 			m_history2[i] = m_history1[i];
@@ -227,48 +300,6 @@ private:
 			
 			// Apply low-pass EMA filter
 			m_smoothedData[i] = (FILTER_ALPHA * medianVal) + ((1.0f - FILTER_ALPHA) * m_smoothedData[i]);
-		}
-		
-		// Spatial smoothing
-		const float neighbourWeight = (1.0f - SPATIAL_CENTER_WEIGHT) / 4.0f;
-		
-		for (int i = 0; i < m_numTaxels; ++i) {
-			int row = i / GRID_WIDTH;
-			int col = i % GRID_WIDTH;
-			
-			float currentVal = m_smoothedData[i];
-			float spatialSum = currentVal * SPATIAL_CENTER_WEIGHT;
-			float missingWeight = 0.0f;
-			
-			if (col > 0) {
-				spatialSum += m_smoothedData[i - 1] * neighbourWeight;
-			} else {
-				missingWeight += neighbourWeight;
-			}
-			
-			if (col < GRID_WIDTH - 1) {
-				spatialSum += m_smoothedData[i + 1] * neighbourWeight;
-			} else {
-				missingWeight += neighbourWeight;
-			}
-			
-			if (row > 0) {
-				spatialSum += m_smoothedData[i - GRID_WIDTH] * neighbourWeight;
-			} else {
-				missingWeight += neighbourWeight;
-			}
-			
-			if (row < GRID_HEIGHT - 1) {
-				spatialSum += m_smoothedData[i + GRID_WIDTH] * neighbourWeight;
-			} else {
-				missingWeight += neighbourWeight;
-			}
-			
-			if (missingWeight > 0.0f) {
-				spatialSum += currentVal * missingWeight;
-			}
-			
-			m_spatialTemp[i] = spatialSum;
 		}
 	}
 	

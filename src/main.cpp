@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stm32f4xx_hal.h>
 
 #define RUN_HARDWARE_TEST 0
@@ -35,6 +36,16 @@ bool cdc_b_hardware_present = false;
 int8_t (*original_st_receive_func)(uint8_t*, uint32_t*) = NULL;
 
 uint16_t sensor_data[128] = {0};
+
+// Payload
+#pragma pack(push, 1)
+typedef struct {
+	uint8_t magic_header[4];
+	uint16_t matrix_data[128];
+} serialised_packet_t;
+#pragma pack(pop)
+
+static serialised_packet_t usb_tx_packet;
 
 /**
  * @brief Structure to pair an AD7142 register address with its configuration value.
@@ -169,6 +180,9 @@ extern "C" void delay_us(uint16_t us) {
  * @brief Tells the AD7142 to perform exactly one scan of the current row.
  */
 void trigger_AD7142(void) {
+	cdc_a_conversion_complete = 0;
+	cdc_b_conversion_complete = 0;
+	
 	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0170);
 	
 	if (cdc_b_hardware_present) {
@@ -180,8 +194,24 @@ void trigger_AD7142(void) {
  * @brief Halts the MCU until the AD7142 physical interrupt pin fires.
  */
 void wait_for_AD7142(void) {
-	delay_us(1500);
-	Clear_CDC_Interrupts();
+	uint32_t timeout = 20000;
+	
+	while (cdc_a_conversion_complete == 0 && timeout > 0) {
+		if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_3) == GPIO_PIN_RESET) {
+			break;
+		}
+		timeout--;
+	}
+	
+	if (cdc_b_hardware_present) {
+		timeout = 20000;
+		while (cdc_b_conversion_complete == 0 && timeout > 0) {
+			if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_RESET){
+				break;
+			}
+			timeout--;
+		}
+	}
 }
 
 /**
@@ -199,6 +229,10 @@ int main(void) {
 	DWT_Delay_Init();
 
 #if RUN_HARDWARE_TEST == 1
+	/**
+	 * @brief Hardware bit-bang configuration diagnostics segment.
+	 * @note Leave untouched.
+	 */
 	// Setup pins
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 	__HAL_RCC_GPIOB_CLK_ENABLE();
@@ -329,6 +363,9 @@ int main(void) {
 	
 	skin_config.trigger_scan_func = trigger_AD7142;
 	skin_config.wait_ready_func = wait_for_AD7142;
+	skin_config.clear_interrupt_func = Clear_CDC_Interrupts;
+	
+	skin_config.settle_time_us = 20;
 	
 	matrix_init(&skin_config);
 	
@@ -337,39 +374,24 @@ int main(void) {
 	cdc_a_conversion_complete = 0;
 	cdc_b_conversion_complete = 0;
 	
-	uint32_t last_heartbeat = 0;
-	bool boot_msg_sent = false;
+	usb_tx_packet.magic_header[0] = 0xDE;
+	usb_tx_packet.magic_header[1] = 0xAD;
+	usb_tx_packet.magic_header[2] = 0xBE;
+	usb_tx_packet.magic_header[3] = 0xEF;
 	
 	while (1) {
-		/** DEBUG DIAGNOSTIC
-		uint16_t id_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x017);
-		uint16_t id_b = 0xFFFF;
-		
-		if (cdc_b_hardware_present) {
-			id_b = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x017);
-		}
-		
-		char id_msg[128];
-		int len = snprintf(id_msg, sizeof(id_msg), "SPI Diagnostic -> CDC A ID: 0x%04X | CDC B ID: 0x%04X\r\n", id_a, id_b);
-		
-		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-		if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)id_msg, len);
-			USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-		}
-		
-		HAL_Delay(500);
-		**/
-		
 		matrix_scan_parallel(sensor_data);
 		
 		static uint32_t last_print_time = 0;
-		if (HAL_GetTick() - last_print_time > 50) {
-			last_print_time = HAL_GetTick();
-			
+		if (HAL_GetTick() - last_print_time > 50) {		
 			USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+			
 			if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-				USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)sensor_data, 256);
+				last_print_time = HAL_GetTick();
+				
+				memcpy(usb_tx_packet.matrix_data, sensor_data, 256);
+				
+				USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)&usb_tx_packet, sizeof(usb_tx_packet));
 				USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 			}
 		}
@@ -559,7 +581,7 @@ void AD7142_Init(void) {
 	// Bank 1
 	ad7142_reg_config_t bank1_table[] = {
 		{0x000, 0x0170}, // PWR_CONTROL
-		{0x001, 0x00FF}, // STAGE_CAL_EN
+		{0x001, 0x0000}, // STAGE_CAL_EN
 		{0x002, 0x0FF0}, // AMB_COMP_CTRL0 (default)
 		{0x003, 0x0140}, // AMB_COMP_CTRL1 (default)
 		{0x004, 0xFFFF}, // AMB_COMP_CTRL2 (default)
@@ -613,6 +635,8 @@ void AD7142_Init(void) {
 	
 	int stage = 0;
 	uint16_t val;
+	uint16_t val1;
+	uint16_t val2;
 	for (uint16_t addr = 0x080; addr < 0x0E0; ) {
 		for (uint16_t i = 0; i < 8; ++i) {
 			if (stage < 8) {
@@ -629,6 +653,7 @@ void AD7142_Init(void) {
 						break;
 						
 					case 2:
+						val = used_reg_vals[i];
 					case 3:						
 					case 4:
 					case 5:
@@ -637,11 +662,19 @@ void AD7142_Init(void) {
 						val = used_reg_vals[i];
 						break;
 				}
+				
+				if (i == 2) {
+					val1 = val + 0x0400;
+					val2 = val;
+				} else {
+					val1 = val;
+					val2 = val;
+				}
 
-				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val);
+				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val1);
 				
 				if (cdc_b_hardware_present) {
-					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, val);
+					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, val2);
 				}
 			} else {
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, unused_reg_vals[i]);

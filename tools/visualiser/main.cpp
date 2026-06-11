@@ -35,7 +35,7 @@
 // Geometry configuration 
 const int ROWS = 8;
 const int COLS = 16;
-const int CELL_SIZE = 75;
+const int CELL_SIZE = 95;
 const int WINDOW_WIDTH = COLS * CELL_SIZE;
 const int WINDOW_HEIGHT = ROWS * CELL_SIZE;
 const int BAR_HEIGHT = 60;
@@ -57,6 +57,7 @@ CalibrationWizardStep wizard_step = STEP_READY;
 // Firmware data structure
 #pragma pack(push, 1)
 typedef struct {
+	uint8_t magic_header[4];
 	uint16_t channels[128];
 } TactileFrame;
 #pragma pack(pop)
@@ -150,7 +151,7 @@ SerialHandle OpenSerialPort(const char *portName) {
  * @brief Read a complete, raw binary data packet from the active serial interface.
  * @param handle The active operating system serial connection handle.
  * @param frame A reference to the target stucture where incoming sensor values are stored.
- * @retval true If a complete 256-byte frame was successfully read without corruption
+ * @retval true If a complete 260-byte frame was successfully synchronised and read without corruption
  * * false If the stream timed out, threw an error, or the buffer was empty.
  */
 bool ReadSerialFrame(SerialHandle handle, TactileFrame &frame) {
@@ -158,39 +159,77 @@ bool ReadSerialFrame(SerialHandle handle, TactileFrame &frame) {
 		return false;
 	}
 	
-	// Map a raw byte pointer directly to data layout
-	uint8_t *buffer = reinterpret_cast<uint8_t*>(&frame);
-	uint32_t bytesToRead = sizeof(TactileFrame);
+	const uint32_t TOTAL_PACKET_SIZE = sizeof(TactileFrame);
 	
 #if defined(_WIN32)
 	DWORD errors;
-	COMSTAT status;
-	
+	COMSTAT status;	
 	ClearCommError(handle, &errors, &status);
 	
-	if (status.cbInQue < bytesToRead) {
+	if (status.cbInQue < TOTAL_PACKET_SIZE) {
 		return false;
 	}
-	
-	DWORD bytesRead;
-	if (ReadFile(handle, buffer, bytesToRead, &bytesRead, nullptr)) {
-		return (bytesRead == bytesToRead);
-	}
-	return true;
 #else
 	int bytesAvailable = 0;
 	
-	if (ioctl(handle, FIONREAD, &bytesAvailable) < 0) {
+	if (ioctl(handle, FIONREAD, &bytesAvailable) < 0 ||
+				bytesAvailable < static_cast<int>(TOTAL_PACKET_SIZE)) {
 		return false;
 	}
-	
-	if (bytesAvailable < static_cast<int>(bytesToRead)) {
-		return false;
-	}
-	
-	ssize_t bytesRead = read(handle, buffer, bytesToRead);
-	return (bytesRead == bytesToRead);
 #endif
+
+	uint8_t match_buffer[4] = { 0 };
+	
+	while (true) {
+#if defined(_WIN32)
+		DWORD bytesRead;
+		if (!ReadFile(handle, &match_buffer[0], 1, &bytesRead, nullptr) || bytesRead != 1) {
+			return false;
+		}
+#else
+		ssize_t bytesRead = read(handle, &match_buffer[0], 1);
+		if (bytesRead != 1) {
+			return false;
+		}
+#endif
+
+		if (match_buffer[0] == 0xDE) {
+#if defined(_WIN32)
+			if (!ReadFile(handle, &match_buffer[1], 3, &bytesRead, nullptr) || bytesRead != 3) {
+				continue;
+			}
+#else
+			bytesRead = read(handle, &match_buffer[1], 3);
+			if (bytesRead != 3) {
+				continue;
+			}
+#endif
+			if (match_buffer[1] == 0xAD && match_buffer[2] == 0xBE && match_buffer[3] == 0xEF) {
+				std::memcpy(frame.magic_header, match_buffer, 4);
+				
+				uint8_t *data_destination = reinterpret_cast<uint8_t*>(frame.channels);
+				uint32_t bytes_remaining = 256;
+				
+				while (bytes_remaining > 0) {
+#if defined(_WIN32)
+					if (!ReadFile(handle, data_destination, bytes_remaining, &bytesRead, nullptr) ||
+						bytesRead <= 0) {
+							return false;
+					}
+#else
+					bytesRead = read(handle, data_destination, bytes_remaining);
+					if (bytesRead <= 0) {
+						return false;
+					}
+#endif
+					bytes_remaining -= bytesRead;
+					data_destination += bytesRead;
+				}
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 /**
@@ -262,11 +301,11 @@ int main() {
 	GuiSetStyle(DEFAULT, BORDER_COLOR_NORMAL, ColorToInt(GRAY));
 	GuiSetStyle(DEFAULT, BASE_COLOR_NORMAL, ColorToInt({ 55, 55, 55, 255 }));
 		
-	TactileFrame current_frame = {0};
+	TactileFrame current_frame = { 0 };
 	float simulation_time = 0.0f;
 
 	Processor processor(128);
-	float processed_frame[128] = {0.0f};
+	float processed_frame[128] = { 0.0f };
 	
 	// Run loop
 	while (!WindowShouldClose()) {
@@ -344,10 +383,9 @@ int main() {
 				
 				uint8_t intensity = static_cast<uint8_t>(cell_value * 255.0f);
 				
-				uint8_t red_channel = intensity;
-				uint8_t green_channel = 255 - intensity;
+				uint8_t blue_channel = intensity;
 				
-				Color cell_color = { red_channel, green_channel, 0, 255 };
+				Color cell_color = { 0, 0, blue_channel, 255 };
 				
 				DrawRectangle(c * CELL_SIZE, (r * CELL_SIZE) + BAR_HEIGHT, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
 
