@@ -21,7 +21,7 @@ The most reliable way to compile the C++ Raylib environment on Windows is via th
 5. Compile the program. Windows requires explicitly linking  the underlying OS graphics and media subsystems:
 
    ```bash
-   g++ main.cpp -o visualiser.exe -O2 -Wall -I../common -lraylib -lopengl32 -lgdi32 -lwinmm
+   g++ main.cpp ../common/config.cpp -o visualiser.exe -O2 -Wall -I../common -lraylib -lopengl32 -lgdi32 -lwinmm
 6. Run the executable directly from terminal:
 
    ```bash
@@ -39,7 +39,7 @@ Linux natively supports the POSIX serial architecture and only requires the stan
 2. Navigate to the project directory and compile:
 
    ```bash
-   g++ main.cpp -o visualiser -O2 -Wall -I../common -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+   g++ main.cpp ../common/config.cpp -o visualiser -O2 -Wall -I../common -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
    ```
 3. Run the executable:
 
@@ -59,7 +59,7 @@ Fedora uses the `dnf`  manager and slightly different package names. But the com
 2. Navigate to the project directory and compile:
 
    ```bash
-   g++ main.cpp -o visualiser -O2 -Wall -I../common -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+   g++ main.cpp ../common/config.cpp -o visualiser -O2 -Wall -I../common -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
    ```
 3. Run the executable:
 
@@ -79,7 +79,7 @@ Because macOS is UNIX-based, the application utilises the exact same non-blockin
 2. Navigate to the project directory. macOS requires linking Apple's native rendering frameworks:
 
    ```bash
-   clang++ main.cpp -o visualiser -O2 -Wall -I../common -lraylib -framework CoreVideo -framework IOKit -framework Cocoa -framework OpenGL
+   clang++ main.cpp ../common/config.cpp -o visualiser -O2 -Wall -I../common -lraylib -framework CoreVideo -framework IOKit -framework Cocoa -framework OpenGL
    ```
 3. Run the executable:
 
