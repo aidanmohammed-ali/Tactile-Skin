@@ -2,7 +2,7 @@
  * @file main.cpp
  * @author Aidan Mohammed-Ali
  * @brief Visualisation tool.
- * * This file takes the sensor outputs and displays.
+ * * This file takes the sensor outputs and displays it.
  * @date 2026-05-23
  */
 
@@ -307,6 +307,12 @@ int main() {
 	Processor processor(128);
 	float processed_frame[128] = { 0.0f };
 	
+	float popup_timer = 0.0f;
+	char popup_message[256] = { 0 };
+	
+	bool config_edit_mode = false;
+	char config_filepath[256] = "config.ini";
+	
 	// Run loop
 	while (!WindowShouldClose()) {
 		/** LEGACY CURVE CALIBRATION
@@ -334,14 +340,47 @@ int main() {
 			}
 		}
 		**/
-
-		if (IsKeyPressed(KEY_C)) {
-			processor.Tare(current_frame.channels);
-			std::cout << "[TARE] Baseline captured." << std::endl;
+		
+		if (!config_edit_mode) {
+			if (IsKeyPressed(KEY_C)) {
+				processor.Tare(current_frame.channels);
+				std::cout << "[TARE] Baseline captured." << std::endl;
+			}
+			if (IsKeyPressed(KEY_R)) {
+				processor.ResetCalibration();
+				std::cout << "[RESET] Returning to raw passthrough." << std::endl;
+			}
 		}
-		if (IsKeyPressed(KEY_R)) {
-			processor.ResetCalibration();
-			std::cout << "[RESET] Returning to raw passthrough." << std::endl;
+		
+		// Drag and drop config logic
+		if (IsFileDropped()) {
+			FilePathList droppedFiles = LoadDroppedFiles();
+			
+			if (droppedFiles.count > 0) {
+				ProcessingConfig newConfig;
+				
+				char *clean_path = droppedFiles.paths[0];
+				
+				if (strncmp(clean_path, "file://", 7) == 0) {
+					clean_path += 7;
+				}
+				
+				clean_path[strcspn(clean_path, "\r\n")] = 0;
+				
+				if (newConfig.loadFromIni(clean_path)) {
+					processor.UpdateConfig(newConfig);
+					std::cout << "[CONFIG] Success: Engine updated with " << clean_path << std::endl;
+					
+					popup_timer = 3.0f;
+					snprintf(popup_message, sizeof(popup_message), "CONFIG LOADED: %s", GetFileName(clean_path));
+				} else {
+					std::cout << "[CONFIG ERROR] Failed to parse " << clean_path << std::endl;
+					
+					popup_timer = 3.0f;
+					snprintf(popup_message, sizeof(popup_message), "ERROR: INVALID CONFIG FILE");
+				}
+			}
+			UnloadDroppedFiles(droppedFiles);
 		}
 		
 		if (hardware_online) {
@@ -389,7 +428,7 @@ int main() {
 				
 				DrawRectangle(c * CELL_SIZE, (r * CELL_SIZE) + BAR_HEIGHT, CELL_SIZE - 2, CELL_SIZE - 2, cell_color);
 
-				const char* val_text = TextFormat("%.2f", cell_value);
+				const char *val_text = TextFormat("%.2f", cell_value);
 				int text_w = MeasureText(val_text, 20);
 				DrawText(val_text, (c * CELL_SIZE) + (CELL_SIZE / 2) - (text_w / 2), 
 									(r * CELL_SIZE) + BAR_HEIGHT + (CELL_SIZE / 2) - 10, 20, WHITE);
@@ -453,7 +492,32 @@ int main() {
 		}
 		
 		// Draw dropdown menu
-		GuiComboBox({ (float)(WINDOW_WIDTH - 425), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 400, 46 }, port_list, &dropdown_active_index);
+		GuiComboBox({ (float)(WINDOW_WIDTH - 260), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 400, 46 }, port_list, &dropdown_active_index);
+		
+		// The Text Input Box
+		if (GuiTextBox({ (float)(WINDOW_WIDTH - 600), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 240, 46 }, config_filepath, 255, config_edit_mode)) {
+			config_edit_mode = !config_edit_mode;
+		}
+		
+		// The Load Button
+		if (GuiButton({ (float)(WINDOW_WIDTH - 350), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 80, 46 }, "LOAD")) {
+			ProcessingConfig newConfig;
+			
+			// Load whatever path is currently typed in the text box
+			if (newConfig.loadFromIni(config_filepath)) {
+				processor.UpdateConfig(newConfig);
+				std::cout << "[CONFIG] Success: Engine updated with " << config_filepath << std::endl;
+				
+				popup_timer = 3.0f;
+				snprintf(popup_message, sizeof(popup_message), "CONFIG LOADED: %s", GetFileName(config_filepath));
+			} else {
+				std::cout << "[CONFIG ERROR] Failed to parse " << config_filepath << std::endl;
+				
+				popup_timer = 3.0f;
+				snprintf(popup_message, sizeof(popup_message), "ERROR: INVALID FILE");
+			}
+		}
+		
 		if (dropdown_active_index != last_selected_index) {
 			last_selected_index = dropdown_active_index;
 
@@ -503,6 +567,23 @@ int main() {
 				hardware_online = false;
 				std::cout << "[SERIAL LINK] Forced Simulation Mode via menu." << std::endl;
 			}
+		}
+		
+		// Draw Popup
+		if (popup_timer > 0.0f) {
+			popup_timer -= GetFrameTime();
+			
+			float alpha = (popup_timer < 1.0f) ? popup_timer : 1.0f;
+			
+			int msg_width = MeasureText(popup_message, 20);
+			int box_width = msg_width + 40;
+			int box_x = (WINDOW_WIDTH - box_width) / 2;
+			int box_y = BAR_HEIGHT + 20;
+			
+			DrawRectangle(box_x, box_y, box_width, 40, Fade(BLACK, alpha * 0.85f));
+			DrawRectangleLines(box_x, box_y, box_width, 40, Fade(LIME, alpha));
+			
+			DrawText(popup_message, box_x + 20, box_y + 10, 20, Fade(LIME, alpha));
 		}
 		
 		EndDrawing();
