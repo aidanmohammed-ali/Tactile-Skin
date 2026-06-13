@@ -47,6 +47,9 @@ public:
 	std::vector<CurveParams> m_curves;
 	std::vector<float> m_baselines;
 	std::vector<float> m_smoothedData;
+
+	std::vector<uint16_t> m_windowHistory;
+	int m_windowWriteIdx = 0;
 	
 	std::vector<float> m_history0;
 	std::vector<float> m_history1;
@@ -63,6 +66,8 @@ public:
 private:
 	static constexpr int GRID_WIDTH = 16;
 	static constexpr int GRID_HEIGHT = 8;
+	static constexpr int WINDOW_SIZE = 10;
+	static constexpr int TOP_SIZE = 5;
 	
 public:
 	/**
@@ -79,6 +84,9 @@ public:
 		m_curves.resize(m_numTaxels);
 		m_baselines.resize(m_numTaxels, 0.0f);
 		m_smoothedData.resize(m_numTaxels, 0.0f);
+
+		m_windowHistory.resize(m_numTaxels * 10, 0);
+		m_windowWriteIdx = 0;
 		
 		m_history0.resize(m_numTaxels, 0.0f);
 		m_history1.resize(m_numTaxels, 0.0f);
@@ -276,12 +284,30 @@ private:
 		for (int i = 0; i < m_numTaxels; ++i) {
 			float rawVal = (float)rawFrame[i];
 			
+			// Trimming Moving Average Filter
+			int write_pos = (i * WINDOW_SIZE) + m_windowWriteIdx;
+			m_windowHistory[write_pos] = rawVal;
+			
+			uint16_t localHistory[WINDOW_SIZE];
+			for (int j = 0; j < WINDOW_SIZE; ++j) {
+				localHistory[j] = m_windowHistory[(i * WINDOW_SIZE) + j];
+			}
+			
+			std::sort(localHistory, localHistory + WINDOW_SIZE);
+			
+			uint32_t topSum = 0;
+			for (int j = WINDOW_SIZE - TOP_SIZE; j < WINDOW_SIZE; ++j) {
+				topSum += localHistory[j];
+			}
+			
+			float preFilteredVal = static_cast<float>(topSum) / static_cast<float>(TOP_SIZE);
+			
 			// 5-Tap Median filter
 			m_history4[i] = m_history3[i];
 			m_history3[i] = m_history2[i];
 			m_history2[i] = m_history1[i];
 			m_history1[i] = m_history0[i];
-			m_history0[i] = rawVal;
+			m_history0[i] = preFilteredVal;
 			
 			float h0 = m_history0[i];
 			float h1 = m_history1[i];
@@ -305,6 +331,8 @@ private:
 			// Apply low-pass EMA filter
 			m_smoothedData[i] = (m_config.filterAlpha * medianVal) + ((1.0f - m_config.filterAlpha) * m_smoothedData[i]);
 		}
+		
+		m_windowWriteIdx = (m_windowWriteIdx + 1) % WINDOW_SIZE;
 	}
 	
 	/**
@@ -326,7 +354,7 @@ private:
 			double Y1 = (double)y1 - (double)y0;
 			double Y2 = (double)y2 - (double)y0;
 			
-			double det = (X1 * X1 * X2) - (X1 * X2 * X2);;
+			double det = (X1 * X1 * X2) - (X1 * X2 * X2);
 			
 			if (std::abs(det) < 1e-2) {
 				m_curves[i].a = 0.0f;
