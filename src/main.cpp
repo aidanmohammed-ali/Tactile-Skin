@@ -614,7 +614,7 @@ void AD7142_Init(void) {
 	uint16_t used_reg_vals[] = {
 		0x0001, // STAGEx_CONNECTION[6:0]
 		0x4000, // STAGEx_CONNECTION[13:7]
-		0x0B00, // STAGEx_AFE_OFFSET
+		0x0C00, // STAGEx_AFE_OFFSET
 		0x2424, // STAGEx_SENSITIVITY
 		0x0F00, // STAGEx_OFFSET_LOW
 		0x0F00, // STAGEx_OFFSET_HIGH
@@ -664,7 +664,7 @@ void AD7142_Init(void) {
 				}
 				
 				if (i == 2) {
-					val1 = val + 0x0400;
+					val1 = val;
 					val2 = val;
 				} else {
 					val1 = val;
