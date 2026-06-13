@@ -99,3 +99,9 @@ When connecting the physical Tactile Skin matrix via USB, ensure the correct har
 ## Calibration Wizard
 
 Once the hardware link is live (indicated by the green status bar), clear the sensor and press [C] to Tare. Press [R] at any time to clear the mapping and reset to default.
+
+## Configuration (.ini) Setup
+
+The application features a built-in configuration profile manager. Users can type the specific name or path of an `.ini` file into the UI text entry box and click the Load button to instantly apply different profiles.
+
+If no custom file is specified, the application defaults to the hardcoded values. Configuration files must be stored in the same directory as the visualiser executable. Example `.ini` files can be found in this repository.
