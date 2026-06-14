@@ -492,7 +492,10 @@ int main() {
 		}
 		
 		// Draw dropdown menu
-		GuiComboBox({ (float)(WINDOW_WIDTH - 260), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 400, 46 }, port_list, &dropdown_active_index);
+		float box_width = 250;
+		float box_x = (float)(WINDOW_WIDTH - box_width - 10);
+		float box_y = (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7);
+		GuiComboBox({ box_x, box_y, box_width, 46 }, port_list, &dropdown_active_index);
 		
 		// The Text Input Box
 		if (GuiTextBox({ (float)(WINDOW_WIDTH - 600), (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7), 240, 46 }, config_filepath, 255, config_edit_mode)) {
