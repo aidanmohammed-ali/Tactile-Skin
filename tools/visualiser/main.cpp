@@ -102,7 +102,7 @@ SerialHandle OpenSerialPort(const char *portName) {
 	}
 	
 	COMMTIMEOUTS timeouts = {0};
-	timeouts.ReadIntervalsTimeout = MAXWORD;
+	timeouts.ReadIntervalTimeout = MAXWORD;
 	timeouts.ReadTotalTimeoutConstant = 0;
 	timeouts.ReadTotalTimeoutMultiplier = 0;
     timeouts.WriteTotalTimeoutConstant = 50;
