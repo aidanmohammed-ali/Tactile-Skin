@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cstdint>
 #include <algorithm>
+#include "config.hpp"
 
 /**
  * @brief Handles tactile matrix low-pass filtering and multi-point quadratic curve fitting calibration.
@@ -41,13 +42,14 @@ public:
 public:
 	int m_numTaxels;
 	WizardState m_state;
-	float m_noiseThreshold;
-	float m_rawDeltaThreshold;
-	float m_maxDelta;
+	ProcessingConfig m_config;
 		
 	std::vector<CurveParams> m_curves;
 	std::vector<float> m_baselines;
 	std::vector<float> m_smoothedData;
+
+	std::vector<uint16_t> m_windowHistory;
+	int m_windowWriteIdx = 0;
 	
 	std::vector<float> m_history0;
 	std::vector<float> m_history1;
@@ -64,25 +66,27 @@ public:
 private:
 	static constexpr int GRID_WIDTH = 16;
 	static constexpr int GRID_HEIGHT = 8;
-	static constexpr float FILTER_ALPHA = 0.09f;
-	static constexpr float SPATIAL_CENTER_WEIGHT = 0.90f;
-	static constexpr float SHARPEN_AMOUNT = 2.0f;
+	static constexpr int WINDOW_SIZE = 10;
+	static constexpr int TOP_SIZE = 5;
 	
 public:
 	/**
 	 * @brief Initialise data buffers and configure uncalibrated tracking defaults.
 	 * @param num Total number of operational sensor nodes in the conected matrix.
+	 * @param config Optional initial configuration parameters.
 	 */
-	Processor(int num = 128) {
+	Processor(int num = 128, const ProcessingConfig& config = ProcessingConfig()) {
 		m_numTaxels = num;
 		m_state = STATE_UNCALIBRATED;
-		m_noiseThreshold = 0.16f;
-		m_rawDeltaThreshold = 800.0f;
-		m_maxDelta = 35000.0f;
+		
+		m_config = config;
 		
 		m_curves.resize(m_numTaxels);
 		m_baselines.resize(m_numTaxels, 0.0f);
 		m_smoothedData.resize(m_numTaxels, 0.0f);
+
+		m_windowHistory.resize(m_numTaxels * 10, 0);
+		m_windowWriteIdx = 0;
 		
 		m_history0.resize(m_numTaxels, 0.0f);
 		m_history1.resize(m_numTaxels, 0.0f);
@@ -97,6 +101,14 @@ public:
 		m_spatialTemp.resize(m_numTaxels, 0.0f);
 		
 		ResetCalibration();
+	}
+	
+	/**
+	 * @brief Dynamically update settings parameters from the GUI at runtime.
+	 * @param newConfig New configuration parameters.
+	 */
+	void UpdateConfig(const ProcessingConfig& newConfig) {
+		m_config = newConfig;
 	}
 	
 	/**
@@ -165,17 +177,17 @@ public:
 		for (int i = 0; i < m_numTaxels; ++i) {			
 			float zeroed = m_smoothedData[i] - m_baselines[i];
 			
-			if (zeroed < m_rawDeltaThreshold) {
+			if (zeroed < m_config.rawDeltaThreshold) {
 				zeroed = 0.0f;
 			}
 			
-			float out = zeroed / m_maxDelta;
+			float out = zeroed / m_config.maxDelta;
 			
 			if (out < 0.0f) {
 				out = 0.0f;
 			}
 			
-			if (out < m_noiseThreshold) {
+			if (out < m_config.noiseThreshold) {
 				out = 0.0f;
 			}
 			
@@ -187,14 +199,14 @@ public:
 		}
 		
 		// Spatial smoothing
-		const float neighbourWeight = (1.0f - SPATIAL_CENTER_WEIGHT) / 4.0f;
+		const float neighbourWeight = (1.0f - m_config.spatialCenterWeight) / 4.0f;
 		
 		for (int i = 0; i < m_numTaxels; ++i) {
 			int row = i / GRID_WIDTH;
 			int col = i % GRID_WIDTH;
 			
 			float currentVal = processedData[i];
-			float spatialSum = currentVal * SPATIAL_CENTER_WEIGHT;
+			float spatialSum = currentVal * m_config.spatialCenterWeight;
 			float missingWeight = 0.0f;
 			
 			if (col > 0) {
@@ -233,7 +245,7 @@ public:
 			float original = processedData[i];
 			float blurred = processedFrame[i];
 			
-			float sharpened = original + SHARPEN_AMOUNT * (original - blurred);
+			float sharpened = original + m_config.sharpenAmount * (original - blurred);
 			
 			if (sharpened < 0.0f) {
 				sharpened = 0.0f;
@@ -272,12 +284,30 @@ private:
 		for (int i = 0; i < m_numTaxels; ++i) {
 			float rawVal = (float)rawFrame[i];
 			
+			// Trimming Moving Average Filter
+			int write_pos = (i * WINDOW_SIZE) + m_windowWriteIdx;
+			m_windowHistory[write_pos] = rawVal;
+			
+			uint16_t localHistory[WINDOW_SIZE];
+			for (int j = 0; j < WINDOW_SIZE; ++j) {
+				localHistory[j] = m_windowHistory[(i * WINDOW_SIZE) + j];
+			}
+			
+			std::sort(localHistory, localHistory + WINDOW_SIZE);
+			
+			uint32_t topSum = 0;
+			for (int j = WINDOW_SIZE - TOP_SIZE; j < WINDOW_SIZE; ++j) {
+				topSum += localHistory[j];
+			}
+			
+			float preFilteredVal = static_cast<float>(topSum) / static_cast<float>(TOP_SIZE);
+			
 			// 5-Tap Median filter
 			m_history4[i] = m_history3[i];
 			m_history3[i] = m_history2[i];
 			m_history2[i] = m_history1[i];
 			m_history1[i] = m_history0[i];
-			m_history0[i] = rawVal;
+			m_history0[i] = preFilteredVal;
 			
 			float h0 = m_history0[i];
 			float h1 = m_history1[i];
@@ -299,8 +329,10 @@ private:
 			medianVal = h2;
 			
 			// Apply low-pass EMA filter
-			m_smoothedData[i] = (FILTER_ALPHA * medianVal) + ((1.0f - FILTER_ALPHA) * m_smoothedData[i]);
+			m_smoothedData[i] = (m_config.filterAlpha * medianVal) + ((1.0f - m_config.filterAlpha) * m_smoothedData[i]);
 		}
+		
+		m_windowWriteIdx = (m_windowWriteIdx + 1) % WINDOW_SIZE;
 	}
 	
 	/**
@@ -322,7 +354,7 @@ private:
 			double Y1 = (double)y1 - (double)y0;
 			double Y2 = (double)y2 - (double)y0;
 			
-			double det = (X1 * X1 * X2) - (X1 * X2 * X2);;
+			double det = (X1 * X1 * X2) - (X1 * X2 * X2);
 			
 			if (std::abs(det) < 1e-2) {
 				m_curves[i].a = 0.0f;
