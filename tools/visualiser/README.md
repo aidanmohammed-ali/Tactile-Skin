@@ -2,6 +2,8 @@
 
 A high-performance, cross-platform desktop utility built with C++ and Raylib to map, calibrate, and simulate physical data from the Tactile Skin hardware matrix.
 
+<img width="2418" height="1391" alt="visualiser" src="https://github.com/user-attachments/assets/48c41b93-6515-4664-a24f-1f82fb56eff1" />
+
 ## Compilation Guide
 
 ### Prerequisites
