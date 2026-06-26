@@ -1,0 +1,73 @@
+{
+  "aruco_dictionary": "DICT_4X4_50",
+  "board_to_image": [
+    [
+      -0.20893931674046223,
+      23.349639694385967,
+      75.93724785593831
+    ],
+    [
+      -23.47263231832964,
+      -0.20761630149106927,
+      429.293237655695
+    ],
+    [
+      -0.00028445786200697183,
+      -0.00015634879296709447,
+      1.0047273986504603
+    ]
+  ],
+  "cols": 17,
+  "image_to_board": [
+    [
+      -0.0002581151538967893,
+      -0.04282247953664525,
+      18.31641245562403
+    ],
+    [
+      0.04280347921253955,
+      -0.00034358498945066666,
+      -3.0882801660387695
+    ],
+    [
+      6.5877067090376635e-06,
+      -1.2177342918733422e-05,
+      1.0
+    ]
+  ],
+  "marker_ids": [
+    2,
+    0,
+    1,
+    3
+  ],
+  "metadata": {
+    "configured_marker_inner_offset_mm": 35.0,
+    "configured_marker_margin_grid": -1.4,
+    "configured_marker_margin_mm": -35.0,
+    "configured_marker_size_grid": 1.6,
+    "configured_marker_size_mm": 40.0,
+    "detected_marker_ids": [
+      2,
+      0,
+      1,
+      3
+    ],
+    "hole_pitch_mm": 25.0,
+    "method": "aruco",
+    "refined_holes": 0
+  },
+  "quality": {
+    "hole_point_count": 0,
+    "inlier_count": 15,
+    "marker_point_count": 16,
+    "max_grid_error": 0.1172057523252362,
+    "max_pixel_error": 2.743587936485658,
+    "mean_grid_error": 0.08884934972762902,
+    "mean_pixel_error": 2.0749691306355635,
+    "median_grid_error": 0.08973462752877936,
+    "median_pixel_error": 2.087885401933645,
+    "point_count": 16
+  },
+  "rows": 12
+}

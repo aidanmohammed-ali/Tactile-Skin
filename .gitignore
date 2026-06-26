@@ -3,6 +3,23 @@ build/
 sdkconfig
 sdkconfig.old
 
+# ROS 2 / colcon build outputs
+/ROS2/ros_ws/build/
+/ROS2/ros_ws/install/
+/ROS2/ros_ws/log/
+
+# ROS 2 generated data and previews
+/ROS2/block_position_prediction/data_collection_manual/runs/
+/ROS2/block_position_prediction/model_training/runs/
+/ROS2/block_position_prediction/prediction/preview_prediction_ui.png
+
+# Python
+/ROS2/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
 # OS generated files
 .DS_Store
 .directory
@@ -12,3 +29,5 @@ sdkconfig.old
 # IDE
 .vscode/
 .pio/
+.agents/
+.codex/

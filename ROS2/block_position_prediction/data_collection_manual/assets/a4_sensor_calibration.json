@@ -1,0 +1,121 @@
+{
+  "marker_layout": {
+    "dictionary": "DICT_4X4_50",
+    "gap_from_sensor_mm": 10.0,
+    "ids": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "marker_size_mm": 20.0,
+    "quiet_zone_mm": 4.0
+  },
+  "marker_specs": [
+    {
+      "marker_id": 0,
+      "paper_corners_mm": [
+        [
+          84.5,
+          55.0
+        ],
+        [
+          104.5,
+          55.0
+        ],
+        [
+          104.5,
+          75.0
+        ],
+        [
+          84.5,
+          75.0
+        ]
+      ]
+    },
+    {
+      "marker_id": 1,
+      "paper_corners_mm": [
+        [
+          192.5,
+          55.0
+        ],
+        [
+          212.5,
+          55.0
+        ],
+        [
+          212.5,
+          75.0
+        ],
+        [
+          192.5,
+          75.0
+        ]
+      ]
+    },
+    {
+      "marker_id": 2,
+      "paper_corners_mm": [
+        [
+          192.5,
+          135.0
+        ],
+        [
+          212.5,
+          135.0
+        ],
+        [
+          212.5,
+          155.0
+        ],
+        [
+          192.5,
+          155.0
+        ]
+      ]
+    },
+    {
+      "marker_id": 3,
+      "paper_corners_mm": [
+        [
+          84.5,
+          135.0
+        ],
+        [
+          104.5,
+          135.0
+        ],
+        [
+          104.5,
+          155.0
+        ],
+        [
+          84.5,
+          155.0
+        ]
+      ]
+    }
+  ],
+  "paper_height_mm": 210.0,
+  "paper_width_mm": 297.0,
+  "sensor": {
+    "cols": 16,
+    "height_mm": 40.0,
+    "left_margin_mm": 4.0,
+    "pitch_mm": 4.0,
+    "rows": 8,
+    "top_margin_mm": 4.0,
+    "width_mm": 68.0
+  },
+  "sensor_origin_mm": [
+    114.5,
+    85.0
+  ],
+  "sensor_rect_mm": [
+    114.5,
+    85.0,
+    182.5,
+    125.0
+  ]
+}
