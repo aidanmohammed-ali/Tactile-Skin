@@ -17,7 +17,7 @@ saved footprint is always a 6-taxel square.
 Run from the project root:
 
 ```bash
-cd /home/peterchen/Documents/Tactile_GroupProject
+cd <path_to_project_directory>/ROS2
 ```
 
 Python packages used by the tool:
