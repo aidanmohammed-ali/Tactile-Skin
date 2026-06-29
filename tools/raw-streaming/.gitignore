@@ -1,0 +1,14 @@
+# Final compiled binaries
+raw-streaming
+raw-streaming.exe
+
+# Build artifacts
+*.o
+*.obj
+*.a
+*.lib
+Makefile
+
+# OS generated files
+.DS_Store
+Thumbs.db
