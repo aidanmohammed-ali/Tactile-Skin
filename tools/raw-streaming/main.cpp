@@ -10,10 +10,13 @@
 #include "raygui.h"
 
 #include <iostream>
+#include <fstream>
 #include <cstdint>
 #include <vector>
 #include <cmath>
 #include <cstring>
+#include <ctime>
+#include <cstdlib>
 #include "raylib.h"
 
 // Cross-Platform OS Serial Communication
@@ -269,6 +272,19 @@ int main() {
     GuiSetStyle(DEFAULT, BORDER_COLOR_NORMAL, ColorToInt(GRAY));
     GuiSetStyle(DEFAULT, BASE_COLOR_NORMAL, ColorToInt({ 55, 55, 55, 255 }));
 
+    // Recording system variables
+    bool is_recording = false;
+    float record_timer = 0.0f;
+    float record_duration = 5.0f; // Target recording time in seconds
+    std::vector<std::pair<float, std::vector<uint16_t>>> recorded_session; // Stores: {timestamp, 128 channels}
+    char status_message[128] = "System Idle";
+    std::string dynamic_filename = "tactile_capture.csv";
+    
+    // UI duration configuration definitions
+    char duration_input_buffer[16] = "5.0";
+    bool duration_edit_mode = false;
+    
+    // Frame variables
     TactileFrame current_frame = { 0 };
     float simulation_time = 0.0f;
 	
@@ -290,6 +306,75 @@ int main() {
 
                     float intensity_curve = std::exp(-distance_squared / 3.5f);
                     current_frame.channels[r * COLS + c] = static_cast<uint16_t>(intensity_curve * 65535.0f);
+                }
+            }
+        }
+        
+        if (!duration_edit_mode && IsKeyPressed(KEY_SPACE) && !is_recording) {
+            char *conversion_end_pointer = nullptr;
+            float interpreted_val = std::strtof(duration_input_buffer, &conversion_end_pointer);
+            
+            if (interpreted_val > 0.05f) {
+                record_duration = interpreted_val;
+            } else {
+                record_duration = 5.0f;
+                std::strcpy(duration_input_buffer, "5.0");
+            }
+            
+            is_recording = true;
+            record_timer = 0.0f;
+            recorded_session.clear();
+            recorded_session.reserve(static_cast<size_t>(record_duration * 60));
+            
+            // Generate a unique filename
+            std::time_t raw_time = std::time(nullptr);
+            std::tm* time_info = std::localtime(&raw_time);
+            char time_buffer[64];
+            // Format: YYYYMMDD_HHMMSS (Safe for filenames across OS)
+            std::strftime(time_buffer, sizeof(time_buffer), "%Y%m%d_%H%M%S", time_info);
+            dynamic_filename = "capture_" + std::string(time_buffer) + ".csv";
+            
+            snprintf(status_message, sizeof(status_message), "Recording Active..");
+            std::cout << "[REC] Capturing data window..." << std::endl;
+        }
+        
+        if (is_recording) {
+            record_timer += GetFrameTime();
+            
+            std::vector<uint16_t> frame_snapshot(current_frame.channels, current_frame.channels + 128);
+            recorded_session.push_back({record_timer, frame_snapshot});
+            
+            if (record_timer >= record_duration) {
+                is_recording = false;
+                snprintf(status_message, sizeof(status_message), "Exporting file...");
+                
+                std::ofstream csv_file(dynamic_filename);
+                if (csv_file.is_open()) {
+                    // Header labels
+                    csv_file << "Timestamp (s)";
+                    for (int i = 0; i < 128; ++i) {
+                        csv_file << ",Ch_" << i;
+                    }
+                    csv_file << "\n";
+                    
+                    // Row matrices
+                    typedef std::pair<float, std::vector<uint16_t>> DataPoint;
+                    for (size_t i = 0; i < recorded_session.size(); ++i) {
+                        const DataPoint &point = recorded_session[i];
+                        
+                        csv_file << point.first;
+                        const std::vector<uint16_t> &channels = point.second;
+                        for (size_t j = 0; j < channels.size(); ++j) {
+                            csv_file << "," << channels[j];
+                        }
+                        csv_file << "\n";
+                    }
+                    csv_file.close();
+                    snprintf(status_message, sizeof(status_message), "Saved!");
+                    std::cout << "[REC] Capture written successfully" << std::endl;
+                } else {
+                    snprintf(status_message, sizeof(status_message), "ERROR: File write blocked");
+                    std::cout << "[REC ERROR] Failed to open file for writing" << std::endl;
                 }
             }
         }
@@ -326,6 +411,22 @@ int main() {
             }
         }
         
+        // Draw banner header
+        DrawRectangle(0, 0, WINDOW_WIDTH, BAR_HEIGHT, Fade(BLACK, 0.95f));
+        DrawLine(0, BAR_HEIGHT - 1, WINDOW_WIDTH, BAR_HEIGHT - 1, GRAY);
+
+        if (is_recording) {
+            DrawText(TextFormat("RECORDING: %.1fs / %.1fs", record_timer, record_duration), 25, 16, 22, RED);
+        } else {
+            DrawText("UNFILTERED RAW STREAM", 25, 16, 22, SKYBLUE);
+            int msg_w = MeasureText(status_message, STATUS_TEXT_SIZE);
+            DrawText(status_message, (WINDOW_WIDTH / 2) - (msg_w / 2), TEXT_Y, STATUS_TEXT_SIZE, LIGHTGRAY);
+        }
+
+        const char* rec_hint = "Press [SPACE] to log data timeframe";
+        int hint_w = MeasureText(rec_hint, STATUS_TEXT_SIZE);
+        DrawText(rec_hint, WINDOW_WIDTH - hint_w - RIGHT_MARGIN, TEXT_Y, STATUS_TEXT_SIZE, GOLD);
+        
         // Draw link status bar
         if (hardware_online) {
             DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, WINDOW_WIDTH, BAR_HEIGHT, ColorAlpha(BLACK, 0.9f));
@@ -335,6 +436,15 @@ int main() {
             DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, WINDOW_WIDTH, BAR_HEIGHT, ColorAlpha(BLACK, 0.9f));
             DrawRectangle(0, WINDOW_HEIGHT + BAR_HEIGHT, 12, BAR_HEIGHT, RED);
             DrawText("SIMULATION MODE", 25, WINDOW_HEIGHT + BAR_HEIGHT + 16, 22, WHITE);
+        }
+        
+        // Draw text box
+        float duration_box_width = 110.0f;
+        float duration_box_x = (float)(WINDOW_WIDTH - 250 - 10) - duration_box_width - 120.0f;
+        float duration_box_y = (float)(WINDOW_HEIGHT + BAR_HEIGHT + 7);
+        DrawText("Duration (s):", (int)duration_box_x, (int)(duration_box_y + 13), 18, LIGHTGRAY);
+        if (GuiTextBox({ duration_box_x + 115.0f, duration_box_y, duration_box_width, 46.0f }, duration_input_buffer, 15, duration_edit_mode)) {
+            duration_edit_mode = !duration_edit_mode;
         }
 
         // Draw dropdown menu
