@@ -2,6 +2,9 @@
 raw-streaming
 raw-streaming.exe
 
+# Captured frames
+capture_*
+
 # Build artifacts
 *.o
 *.obj
