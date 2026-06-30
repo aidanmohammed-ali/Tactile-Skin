@@ -17,7 +17,7 @@ The core software running on the microcontroller, built using PlatformIO. It han
   * **Dynamic Port Mapping:** Hot-swap hardware link contexts on-the-fly via an integrated UI selector.
   * **Zero-Lag Simulation Mode:** Automated fallback to a high-fidelity Gaussian simulation model when running offline.
   * **Dynamic Profile Loading:** Real-time parameter loading via local `.ini` configuration files to calibrate individual sensor variations dynamically without recompiling the codebase.
-* `/raw-streaming`: A utility based on the visualiser for streaming the raw sensor data without any signal processing. Used for data analysis.
+* `/raw-streaming`: A utility based on the visualiser for streaming the raw sensor data without any signal processing. Raw data across a specified time frame can be saved in `.csv` format and used for data analysis.
 
 ### Hardware (`/hardware`)
 * `/fpc`: Flexible Printed Circuit manufacturing files.
