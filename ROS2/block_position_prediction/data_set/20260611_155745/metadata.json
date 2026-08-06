@@ -1,0 +1,314 @@
+{
+  "app_mode": "manual_aruco",
+  "block": {
+    "side_cm": 2.4,
+    "side_taxel": 6.0
+  },
+  "calibration": {
+    "created_at": 1781228533.062741,
+    "dictionary": "DICT_4X4_50",
+    "image_to_paper": [
+      [
+        0.2516647918296969,
+        -0.009127261169973316,
+        67.09507308566594
+      ],
+      [
+        0.014255182019313506,
+        0.2513820374944932,
+        1.0327133103413153
+      ],
+      [
+        1.230671919757536e-05,
+        1.0920743115890807e-05,
+        0.9999999999999999
+      ]
+    ],
+    "marker_ids": [
+      1,
+      0
+    ],
+    "paper_to_image": [
+      [
+        3.977760643110453,
+        0.15602720526821665,
+        -267.0492724384372
+      ],
+      [
+        -0.22537683979655074,
+        3.969347066385966,
+        11.02247798914496
+      ],
+      [
+        -4.649190069823771e-05,
+        -4.526840265223431e-05,
+        1.0031661267571967
+      ]
+    ],
+    "quality": {
+      "inlier_count": 8,
+      "max_paper_error_mm": 0.22155182818059166,
+      "max_pixel_error": 0.8892431832920382,
+      "mean_paper_error_mm": 0.12088428108874139,
+      "mean_pixel_error": 0.4849130311566774,
+      "median_paper_error_mm": 0.12933210649152002,
+      "median_pixel_error": 0.5180966178196069,
+      "point_count": 8
+    },
+    "sheet": {
+      "marker_layout": {
+        "dictionary": "DICT_4X4_50",
+        "gap_from_sensor_mm": 10.0,
+        "ids": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "marker_size_mm": 20.0,
+        "quiet_zone_mm": 4.0
+      },
+      "marker_specs": [
+        {
+          "marker_id": 0,
+          "paper_corners_mm": [
+            [
+              84.5,
+              55.0
+            ],
+            [
+              104.5,
+              55.0
+            ],
+            [
+              104.5,
+              75.0
+            ],
+            [
+              84.5,
+              75.0
+            ]
+          ]
+        },
+        {
+          "marker_id": 1,
+          "paper_corners_mm": [
+            [
+              192.5,
+              55.0
+            ],
+            [
+              212.5,
+              55.0
+            ],
+            [
+              212.5,
+              75.0
+            ],
+            [
+              192.5,
+              75.0
+            ]
+          ]
+        },
+        {
+          "marker_id": 2,
+          "paper_corners_mm": [
+            [
+              192.5,
+              135.0
+            ],
+            [
+              212.5,
+              135.0
+            ],
+            [
+              212.5,
+              155.0
+            ],
+            [
+              192.5,
+              155.0
+            ]
+          ]
+        },
+        {
+          "marker_id": 3,
+          "paper_corners_mm": [
+            [
+              84.5,
+              135.0
+            ],
+            [
+              104.5,
+              135.0
+            ],
+            [
+              104.5,
+              155.0
+            ],
+            [
+              84.5,
+              155.0
+            ]
+          ]
+        }
+      ],
+      "paper_height_mm": 210.0,
+      "paper_width_mm": 297.0,
+      "sensor": {
+        "cols": 16,
+        "height_mm": 40.0,
+        "left_margin_mm": 4.0,
+        "pitch_mm": 4.0,
+        "rows": 8,
+        "top_margin_mm": 4.0,
+        "width_mm": 68.0
+      },
+      "sensor_origin_mm": [
+        114.5,
+        85.0
+      ],
+      "sensor_rect_mm": [
+        114.5,
+        85.0,
+        182.5,
+        125.0
+      ]
+    }
+  },
+  "camera": {
+    "frame_height": 720,
+    "frame_width": 1280,
+    "source": "http://192.168.180.254:3588/video"
+  },
+  "created_at": 1781228544.5629628,
+  "schema_version": "manual_collection_v1",
+  "sensor_coordinate_frame": "taxel_center_v1",
+  "sensor_geometry": {
+    "marker_layout": {
+      "dictionary": "DICT_4X4_50",
+      "gap_from_sensor_mm": 10.0,
+      "ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "marker_size_mm": 20.0,
+      "quiet_zone_mm": 4.0
+    },
+    "marker_specs": [
+      {
+        "marker_id": 0,
+        "paper_corners_mm": [
+          [
+            84.5,
+            55.0
+          ],
+          [
+            104.5,
+            55.0
+          ],
+          [
+            104.5,
+            75.0
+          ],
+          [
+            84.5,
+            75.0
+          ]
+        ]
+      },
+      {
+        "marker_id": 1,
+        "paper_corners_mm": [
+          [
+            192.5,
+            55.0
+          ],
+          [
+            212.5,
+            55.0
+          ],
+          [
+            212.5,
+            75.0
+          ],
+          [
+            192.5,
+            75.0
+          ]
+        ]
+      },
+      {
+        "marker_id": 2,
+        "paper_corners_mm": [
+          [
+            192.5,
+            135.0
+          ],
+          [
+            212.5,
+            135.0
+          ],
+          [
+            212.5,
+            155.0
+          ],
+          [
+            192.5,
+            155.0
+          ]
+        ]
+      },
+      {
+        "marker_id": 3,
+        "paper_corners_mm": [
+          [
+            84.5,
+            135.0
+          ],
+          [
+            104.5,
+            135.0
+          ],
+          [
+            104.5,
+            155.0
+          ],
+          [
+            84.5,
+            155.0
+          ]
+        ]
+      }
+    ],
+    "paper_height_mm": 210.0,
+    "paper_width_mm": 297.0,
+    "sensor": {
+      "cols": 16,
+      "height_mm": 40.0,
+      "left_margin_mm": 4.0,
+      "pitch_mm": 4.0,
+      "rows": 8,
+      "top_margin_mm": 4.0,
+      "width_mm": 68.0
+    },
+    "sensor_origin_mm": [
+      114.5,
+      85.0
+    ],
+    "sensor_rect_mm": [
+      114.5,
+      85.0,
+      182.5,
+      125.0
+    ]
+  },
+  "tactile": {
+    "baud": 115200,
+    "hardware_online": true,
+    "port": "/dev/ttyACM0"
+  }
+}

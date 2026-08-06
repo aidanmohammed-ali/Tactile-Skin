@@ -2,6 +2,22 @@
 
 This project focuses on creating a thin, flexible tactile skin that measures mechanical pressure, rather than just proximity. This repository contains the firmware and signal processing logic to convert physical deformation and capacitance into usable digital data and the schematics and Gerber files for the requisite hardware.
 
+## Sensor Hardware
+
+![Full tactile sensor assembly](assets/FullSensorAssem.png)
+
+The tactile skin is built around a 16 x 8 capacitive matrix sensor. Each taxel in the matrix responds to local pressure-induced deformation, producing a change in capacitance that can be mapped into a two-dimensional tactile image. This layout provides a compact sensing surface while preserving enough spatial resolution to estimate where and how an object contacts the skin.
+
+The signal collection board interfaces the sensor matrix with AD7142 capacitance-to-digital converters and an STM32F411CEU6 microcontroller. The AD7142 devices convert small capacitance changes from the tactile array into digital measurements, while the STM32 firmware coordinates sensor scanning, data acquisition, packet formatting, and USB serial transmission to the host computer. Together, the flexible sensor and collection board form a complete tactile feedback module for robotic manipulation experiments.
+
+## Tactile Sensor Application Demo
+
+![Robot grasping demo with tactile feedback](assets/TactileDemo.gif)
+
+This demo shows a robot using tactile feedback to grasp and place a block more accurately. When the robot picks up the block, the tactile contact pattern is visualised on the computer as a red region on the green heat map. The robot uses this tactile pattern to estimate an offset for the final placement position, allowing it to compensate when the YOLO vision prediction is inaccurate or when the block is disturbed after detection.
+
+In the first trial, the robot detects the block with computer vision, picks it up, and places it in the holder. In the second trial, the block is manually moved after YOLO detection, but the robot still places it successfully because the tactile feedback corrects the placement position during the task.
+
 ## Repository Structure
 
 ### Firmware

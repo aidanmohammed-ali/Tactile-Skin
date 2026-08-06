@@ -1,0 +1,90 @@
+vision_node:
+  ros__parameters:
+    source: "http://192.168.213.190:3588/video"
+    camera_source_store: ""
+    frame_width: 1280
+    frame_height: 720
+    publish_rate_hz: 10.0
+    capture_low_latency: true
+    image_qos_depth: 1
+    image_qos_reliability: "best_effort"
+    detect_on_timer: false
+    weights: ""
+    calibration: ""
+    hole_pitch_mm: 25.0
+    dictionary: "DICT_4X4_50"
+    marker_size_grid: 1.6
+    marker_margin_grid: -1.4
+    refine_holes: true
+    image_size: 640
+    device: "auto"
+    confidence: 0.1
+    anchor: "center"
+
+hardware_arm_node:
+  ros__parameters:
+    device_name: "/dev/ttyUSB0"
+    auto_connect: false
+    motor_ids: [11, 12, 13, 14, 15]
+    default_speed: 70
+    default_accel: 10
+    io_retry_count: 2
+    io_retry_delay_sec: 0.03
+    io_lock_timeout_sec: 3.0
+    goal_write_ack: true
+    gripper_open_position: 1400
+    gripper_close_position: 2340
+    state_rate_hz: 5.0
+    poll_joint_state: false
+    maximum_joint_speed: 100
+    minimum_joint_speed: 10
+    default_move_duration_sec: 1.2
+
+sim_arm_node:
+  ros__parameters:
+    gripper_open_position: 1400
+    gripper_close_position: 2350
+    state_rate_hz: 5.0
+    poll_joint_state: true
+    maximum_joint_speed: 100
+    minimum_joint_speed: 10
+    default_move_duration_sec: 1.2
+
+tactile_pose_node:
+  ros__parameters:
+    device: "auto"
+    tactile_port: "/dev/ttyACM0"
+    tactile_baud: 115200
+    confidence_threshold: 0.5
+    legacy_force_threshold: 1.0
+    service_name: "/tactile_sensor/predict_pose"
+    stream_frames: true
+    stream_topic: "/tactile_sensor/frame"
+    stream_frame_kind: "top5_normalized"
+    display_heatmap: true
+    heatmap_window: "Tactile Sensor Heatmap"
+    heatmap_width: 640
+    heatmap_value_max: 0.0
+    heatmap_flip_x: true
+    heatmap_rate_hz: 30.0
+    save_prediction_images: true
+    prediction_image_dir: "~/.ros/tactile_sensor/predictions"
+    prediction_image_width: 640
+    prediction_labels_file: "labels.jsonl"
+
+task_node:
+  ros__parameters:
+    task_package: "tactile_task.tasks"
+    default_task: ""
+    auto_start: false
+    tactile_pose_service: "/tactile_sensor/predict_pose"
+
+operator_ui_node:
+  ros__parameters:
+    camera_source: "http://192.168.213.190:3588/video"
+    camera_source_store: ""
+    image_qos_depth: 1
+    image_qos_reliability: "best_effort"
+    confidence: 0.1
+    gripper_open_position: 1400
+    gripper_close_position: 2350

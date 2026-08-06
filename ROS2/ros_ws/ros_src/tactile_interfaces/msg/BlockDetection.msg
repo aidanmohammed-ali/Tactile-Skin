@@ -1,0 +1,10 @@
+builtin_interfaces/Time stamp
+bool detected
+bool grid_position_valid
+float64 grid_column
+float64 grid_row
+float64 pixel_x
+float64 pixel_y
+float32 confidence
+string class_name
+string message

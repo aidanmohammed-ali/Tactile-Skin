@@ -1,0 +1,10 @@
+---
+bool success
+bool detected
+float64 x
+float64 y
+float64 angle_rad
+float64 angle_deg
+float32 confidence
+bool fully_inside_sensor
+string message
