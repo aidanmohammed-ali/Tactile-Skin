@@ -4,10 +4,14 @@ Refactored ROS 2 implementation for camera calibration, block detection, arm con
 
 ## First Build
 
+`<path_to_ros_workspace>` means the absolute path to this repository's ROS 2
+workspace directory. In the current repository layout, that is:
+`<path_to_project_directory>/ROS2/ros_ws`.
+
 Run once after cloning or after interface/package changes:
 
 ```bash
-cd /home/peterchen/Documents/tactile_ws
+cd <path_to_ros_workspace>
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --base-paths ros_src
 source install/setup.bash
@@ -18,7 +22,7 @@ source install/setup.bash
 Use these commands when opening a new terminal:
 
 ```bash
-cd /home/peterchen/Documents/tactile_ws
+cd <path_to_ros_workspace>
 source install/setup.bash
 ros2 launch tactile_bringup system.launch.py mode:=sim
 ```
@@ -26,7 +30,7 @@ ros2 launch tactile_bringup system.launch.py mode:=sim
 For the real Dynamixel arm:
 
 ```bash
-cd /home/peterchen/Documents/tactile_ws
+cd <path_to_ros_workspace>
 source install/setup.bash
 ros2 launch tactile_bringup system.launch.py mode:=hardware
 ```
@@ -34,20 +38,20 @@ ros2 launch tactile_bringup system.launch.py mode:=hardware
 If ROS says `Package 'tactile_bringup' not found`, the terminal has not sourced the workspace:
 
 ```bash
-cd /home/peterchen/Documents/tactile_ws
+cd <path_to_ros_workspace>
 source install/setup.bash
 ```
 
 Optional shortcut for future terminals:
 
 ```bash
-echo 'source /home/peterchen/Documents/tactile_ws/install/setup.bash' >> ~/.bashrc
+echo 'source <path_to_ros_workspace>/install/setup.bash' >> ~/.bashrc
 ```
 
 Then open a new terminal and launch directly from the workspace:
 
 ```bash
-cd /home/peterchen/Documents/tactile_ws
+cd <path_to_ros_workspace>
 ros2 launch tactile_bringup system.launch.py mode:=sim
 ```
 

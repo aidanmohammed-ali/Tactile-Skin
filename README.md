@@ -11,18 +11,35 @@ The core software running on the microcontroller, built using PlatformIO. It han
 * `platformio.ini`: The core PlatformIO configuration script.
 
 ### Tools (`/tools`)
-* `/common`: Shared, hardware-agnostic C++ data engine containing the core signal processing logic and GUI rendering requirements.
+* `/common`: Shared, hardware-agnostic C++ data engine containing the core signal processing logic and GUI rendering requirements. Folder required to compile both visualiser and raw-streaming.
 * `/visualiser`: A high-performance, cross-platform desktop utility built with Raylib. Features include:
   * **Multi-Instance Isolation:** Run multiple parallel instances side-by-side to monitor independent microcontrollers simultaneously.
   * **Dynamic Port Mapping:** Hot-swap hardware link contexts on-the-fly via an integrated UI selector.
   * **Zero-Lag Simulation Mode:** Automated fallback to a high-fidelity Gaussian simulation model when running offline.
   * **Dynamic Profile Loading:** Real-time parameter loading via local `.ini` configuration files to calibrate individual sensor variations dynamically without recompiling the codebase.
+* `/raw-streaming`: A utility based on the visualiser for streaming the raw sensor data without any signal processing. Raw data across a specified time frame can be saved in `.csv` format and used for data analysis.
 
 ### Hardware (`/hardware`)
 * `/fpc`: Flexible Printed Circuit manufacturing files.
   * Complete production-ready Gerber packages.
 * `/pcb`: Main rigid Printed Circuit Board design histories.
   * Main interface between the sensor and microcontroller.
+
+## Sensor Hardware
+
+![Full tactile sensor assembly](assets/FullSensorAssem.png)
+
+The tactile skin is built around a 16 x 8 capacitive matrix sensor. Each taxel in the matrix responds to local pressure-induced deformation, producing a change in capacitance that can be mapped into a two-dimensional tactile image. This layout provides a compact sensing surface while preserving enough spatial resolution to estimate where and how an object contacts the skin.
+
+The signal collection board interfaces the sensor matrix with AD7142 capacitance-to-digital converters and an STM32F411CEU6 microcontroller. The AD7142 devices convert small capacitance changes from the tactile array into digital measurements, while the STM32 firmware coordinates sensor scanning, data acquisition, packet formatting, and USB serial transmission to the host computer. Together, the flexible sensor and collection board form a complete tactile feedback module for robotic manipulation experiments.
+
+## Tactile Sensor Application Demo
+
+![Robot grasping demo with tactile feedback](assets/TactileDemo.gif)
+
+This demo shows a robot using tactile feedback to grasp and place a block more accurately. When the robot picks up the block, the tactile contact pattern is visualised on the computer as a red region on the green heat map. The robot uses this tactile pattern to estimate an offset for the final placement position, allowing it to compensate when the YOLO vision prediction is inaccurate or when the block is disturbed after detection.
+
+In the first trial, the robot detects the block with computer vision, picks it up, and places it in the holder. In the second trial, the block is manually moved after YOLO detection, but the robot still places it successfully because the tactile feedback corrects the placement position during the task.
 
 ## Contribution Guidelines
 
