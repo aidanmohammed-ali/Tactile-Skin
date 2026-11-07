@@ -23,18 +23,24 @@ extern "C" {
 	extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
 }
 
-SPI_HandleTypeDef hspi1; // CDC A
-SPI_HandleTypeDef hspi2; // CDC B
+SPI_HandleTypeDef hspi1; // CDC1
 
 volatile uint8_t current_column = 0;
 volatile uint8_t cdc_a_conversion_complete = 0;
-volatile uint8_t cdc_b_conversion_complete = 0;
-
-bool cdc_b_hardware_present = false;
 
 int8_t (*original_st_receive_func)(uint8_t*, uint32_t*) = NULL;
 
-uint16_t sensor_data[128] = {0};
+#pragma pack(push, 1)
+typedef struct {
+	uint8_t magic_header[4];
+	uint16_t sensor_data[128];
+} tactile_usb_frame_t;
+#pragma pack(pop)
+
+tactile_usb_frame_t usb_frame = {
+	{0xDE, 0xAD, 0xBE, 0xEF},
+	{0}
+};
 
 /**
  * @brief Structure to pair an AD7142 register address with its configuration value.
@@ -48,7 +54,6 @@ typedef struct {
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
 void MX_SPI1_Init(void);
-void MX_SPI2_Init(void);
 void AD7142_Init(void);
 void Clear_CDC_Interrupts(void);
 
@@ -113,7 +118,6 @@ uint16_t AD7142_Read_Reg(SPI_HandleTypeDef *hspi, GPIO_TypeDef *cs_port, uint16_
 extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	alignas(2) uint16_t tx_buf[2];
 	alignas(2) uint16_t rx_buf_a[2] = {0, 0};
-	alignas(2) uint16_t rx_buf_b[2] = {0, 0};
 	
 	tx_buf[0] = (uint16_t)(0xE400 | ((0x00B + current_column) & 0x03FF));
 	tx_buf[1] = 0x0000;
@@ -125,16 +129,8 @@ extern "C" void get_sensor_pair(uint16_t *val_a, uint16_t *val_b) {
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 	*val_a = rx_buf_a[1];
 	
-	// CDC B (Only if it exists)
-	if (cdc_b_hardware_present) {
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-		for(volatile int d=0; d<50; d++);
-		HAL_SPI_TransmitReceive(&hspi2, (uint8_t*)tx_buf, (uint8_t*)rx_buf_b, 2, 10);
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-		*val_b = rx_buf_b[1];
-	} else {
-		*val_b = 0;
-	}
+	// CDC2 is disabled; retain the paired API for callers.
+	*val_b = 0;
 }
 
 /**
@@ -157,21 +153,11 @@ extern "C" uint16_t read_analog(void) {
 extern "C" void get_row(uint16_t *row, uint8_t cdc_id) {
 	alignas(2) uint16_t tx_buf[2];
 	alignas(2) uint16_t rx_buf[2] = {0, 0};
-	SPI_HandleTypeDef *hspi = &hspi1;
-	GPIO_TypeDef *cs_port = GPIOA;
-	uint16_t cs_pin = GPIO_PIN_4;
-	
 	if (cdc_id != 0) {
-		if (!cdc_b_hardware_present) {
-			for (uint16_t i = 0; i < 8; ++i) {
-				row[i] = 0;
-			}
-			return;
+		for (uint16_t i = 0; i < 8; ++i) {
+			row[i] = 0;
 		}
-		
-		hspi = &hspi2;
-		cs_port = GPIOB;
-		cs_pin = GPIO_PIN_12;
+		return;
 	}
 	
 	for (uint16_t i = 0; i < 8; ++i) {
@@ -180,10 +166,10 @@ extern "C" void get_row(uint16_t *row, uint8_t cdc_id) {
 		rx_buf[0] = 0;
 		rx_buf[1] = 0;
 		
-		HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 		for(volatile int d=0; d<50; d++);
-		HAL_SPI_TransmitReceive(hspi, (uint8_t*)tx_buf, (uint8_t*)rx_buf, 2, 10);
-		HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
+		HAL_SPI_TransmitReceive(&hspi1, (uint8_t*)tx_buf, (uint8_t*)rx_buf, 2, 10);
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 		
 		row[i] = rx_buf[1];
 	}
@@ -220,28 +206,27 @@ extern "C" void delay_us(uint16_t us) {
 /**
  * @brief Tells the AD7142 to perform exactly one scan of the current row.
  */
-void trigger_AD7142(void) {
+void trigger_AD7142(int id) {
 	HAL_Delay(1);
+	if (id != 1) {
+		return;
+	}
+
 	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x002, 0x8FF0);
 	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0170);
-	
-	if (cdc_b_hardware_present) {
-		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x002, 0x8FF0);
-		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x000, 0x0170);
-	}
 }
 
 /**
  * @brief Tells the AD7142 to stop. Call this function when receiving the stage7 interrupt.
  */
-void stop_AD7142(void){
+void stop_AD7142(int id){
 	HAL_Delay(13);
 
-	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0171);
-	if(cdc_b_hardware_present){
-		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x000, 0x0171);
+	if (id != 1) {
+		return;
 	}
 
+	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0171);
 	Clear_CDC_Interrupts();
 }
 
@@ -280,7 +265,6 @@ int main(void) {
 #if RUN_HARDWARE_TEST == 1
 	// Setup pins
 	__HAL_RCC_GPIOA_CLK_ENABLE();
-	__HAL_RCC_GPIOB_CLK_ENABLE();
 	
 	// SPI1
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -295,21 +279,8 @@ int main(void) {
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
-	// SPI2
-	GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_15; // CS, SCK, MOSI
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-	
-	GPIO_InitStruct.Pin = GPIO_PIN_14; // MISO
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-	
 	// Set default states
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_5, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12 | GPIO_PIN_13, GPIO_PIN_SET);
 	
 	// Start USB manually
 	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
@@ -321,7 +292,6 @@ int main(void) {
 	while (1) {
 		uint16_t tx_cmd = 0xE417;
 		uint16_t id_a = 0;
-		uint16_t id_b = 0;
 		
 		// Manually read CDC A
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
@@ -342,33 +312,13 @@ int main(void) {
 		}
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 		
-		// Manually read CDC B
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-		delay_us(10);
-		for (int i = 15; i >= 0; --i) {
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, (tx_cmd & (1 << i)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-			delay_us(10);
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
-			delay_us(10);
-		}
-		for (int i = 15; i >= 0; --i) {
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
-			delay_us(10);
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
-			if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14) == GPIO_PIN_SET) { id_b |= (1 << i); }
-			delay_us(10);
-		}
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-		
 		// Print result
 		char report[256];
 		int len = snprintf(report, sizeof(report), 
 							"\r\n--- BIT-BANG HARDWARE DIAGNOSTIC ---\r\n"
-							"CDC A (PA4/5/6/7)        ID: 0x%04X\r\n"
-							"CDC B (PB12/13/14/15)    ID: 0x%04X\r\n"
+							"CDC1 (PA4/5/6/7)         ID: 0x%04X\r\n"
 							"------------------------------------\r\n",
-							id_a, id_b);
+							id_a);
 		
 		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
 		
@@ -383,7 +333,6 @@ int main(void) {
 	// Initialise peripheral ports
 	MX_GPIO_Init();
 	MX_SPI1_Init();
-	MX_SPI2_Init();
 	AD7142_Init();
 	
 	// Initialise and start the native USB CDC Virtual COM Port stack
@@ -415,37 +364,13 @@ int main(void) {
 	// Clear initial startup triggers
 	Clear_CDC_Interrupts();
 	cdc_a_conversion_complete = 0;
-	cdc_b_conversion_complete = 0;
-	
-	// uint32_t last_heartbeat = 0;
-	// bool boot_msg_sent = false;
 	
 	while (1) {
-		/** DEBUG DIAGNOSTIC
-		uint16_t id_a = AD7142_Read_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x017);
-		uint16_t id_b = 0xFFFF;
-		
-		if (cdc_b_hardware_present) {
-			id_b = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x017);
-		}
-		
-		char id_msg[128];
-		int len = snprintf(id_msg, sizeof(id_msg), "SPI Diagnostic -> CDC A ID: 0x%04X | CDC B ID: 0x%04X\r\n", id_a, id_b);
-		
-		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-		if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)id_msg, len);
-			USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-		}
-		
-		HAL_Delay(500);
-		**/
-		
-		matrix_scan_parallel(sensor_data);
+		matrix_scan_parallel(usb_frame.sensor_data);
 
 		USBD_CDC_HandleTypeDef *hcdc_main = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
 		if (hcdc_main != NULL && hcdc_main->TxState == 0) {
-			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)sensor_data, 256);
+			USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)&usb_frame, sizeof(usb_frame));
 			USBD_CDC_TransmitPacket(&hUsbDeviceFS);
 		}
 		
@@ -511,9 +436,8 @@ void SystemClock_Config(void) {
 void MX_GPIO_Init(void) {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	
-	// Enable internal clocks for GPIOA and GPIOB
+	// Enable the GPIOA clock used by CDC1 and the row multiplexer.
 	__HAL_RCC_GPIOA_CLK_ENABLE();
-	__HAL_RCC_GPIOB_CLK_ENABLE();
 	
 	// Set default starting states for MUX
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2, GPIO_PIN_RESET);
@@ -537,19 +461,8 @@ void MX_GPIO_Init(void) {
 	// Physically apply configuration
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
-	// Set default starting states for CS (SPI2)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-	
-	GPIO_InitStruct.Pin = GPIO_PIN_12;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	
-	// Physically apply configuration
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-	
-	// Configure INT
-	GPIO_InitStruct.Pin = GPIO_PIN_3 | GPIO_PIN_8;
+	// Configure the CDC1 completion interrupt.
+	GPIO_InitStruct.Pin = GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	
@@ -566,22 +479,9 @@ void MX_GPIO_Init(void) {
 	// Physically apply configuration
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
-	// Configure SPI2 hardware
-	GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-	GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
-	
-	// Physically apply configuration
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-	
 	// Listen to interrupt channel
 	HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
 	HAL_NVIC_EnableIRQ(EXTI3_IRQn);
-	
-	HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
-	HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 /**
@@ -610,31 +510,6 @@ void MX_SPI1_Init(void) {
 }
 
 /**
- * @brief Initialise SPI2 for CDC2.
- */
-void MX_SPI2_Init(void) {
-	__HAL_RCC_SPI2_CLK_ENABLE();
-	
-	hspi2.Instance = SPI2;
-	
-	// Configuration for SPI
-	hspi2.Init.Mode = SPI_MODE_MASTER;
-	hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-	hspi2.Init.DataSize = SPI_DATASIZE_16BIT;
-	hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
-	hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
-	hspi2.Init.NSS = SPI_NSS_SOFT;
-	
-	// Set speed limit
-	hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
-	
-	// Physically apply configuration
-	if (HAL_SPI_Init(&hspi2) != HAL_OK) {
-		while(1);
-	}
-}
-
-/**
  * @brief Initialise the AD7142.
  */
 void AD7142_Init(void) {
@@ -647,7 +522,7 @@ void AD7142_Init(void) {
 		{0x004, 0xFFFF}, // AMB_COMP_CTRL2 (default)
 		{0x005, 0x0000}, // STAGE_LOW_INT_EN (default)
 		{0x006, 0x0000}, // STAGE_HIGH_INT_EN (default)
-		{0x007, 0x00FF}  // STAGE_COMPLETE_INT_EN
+		{0x007, 0x0080}  // STAGE_COMPLETE_INT_EN
 	};
 	
 	const int num_registers = sizeof(bank1_table) / sizeof(bank1_table[0]);
@@ -657,24 +532,11 @@ void AD7142_Init(void) {
 		AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, bank1_table[i].reg_addr, bank1_table[i].reg_val);
 	}
 	
-	// Probe CDC2
-	uint16_t cdc_b_id = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x017);
-	
-	if (cdc_b_id != 0x0000 && cdc_b_id != 0xFFFF) {
-		cdc_b_hardware_present = true;
-	}
-	
-	for (int i = 0; i < num_registers; ++i) {
-		if (cdc_b_hardware_present) {
-			AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, bank1_table[i].reg_addr, bank1_table[i].reg_val);
-		}
-	}
-	
 	// Bank 2
 	uint16_t used_reg_vals[] = {
 		0x0001, // STAGEx_CONNECTION[6:0]
 		0x4000, // STAGEx_CONNECTION[13:7]
-		0x1200, // STAGEx_AFE_OFFSET
+		0x1600, // STAGEx_AFE_OFFSET
 		0x2424, // STAGEx_SENSITIVITY
 		0x0F00, // STAGEx_OFFSET_LOW
 		0x0F00, // STAGEx_OFFSET_HIGH
@@ -722,15 +584,8 @@ void AD7142_Init(void) {
 
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, val);
 				
-				if (cdc_b_hardware_present) {
-					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, val);
-				}
 			} else {
 				AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, addr, unused_reg_vals[i]);
-				
-				if (cdc_b_hardware_present) {
-					AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, addr, unused_reg_vals[i]);
-				}
 			}
 			addr++;
 		}
@@ -746,10 +601,6 @@ void Clear_CDC_Interrupts(void) {
 		
 	(void)status_a;
 	
-	if (cdc_b_hardware_present) {
-		uint16_t status_b = AD7142_Read_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x00A);
-		(void)status_b;
-	}
 }
 
 /**
@@ -767,22 +618,12 @@ extern "C" void EXTI3_IRQHandler(void) {
 }
 
 /**
- * @brief Hardware Interrupt Vector for EXTI Lines 5 to 9.
- */
-extern "C" void EXTI9_5_IRQHandler(void) {
-	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_8);
-}
-
-/**
  * @brief STM32 External Interrupt Callback hook.
  * @param Interrupt GPIO Pin.
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_3) {
 		cdc_a_conversion_complete = 1;
-	}
-	if (GPIO_Pin == GPIO_PIN_8) {
-		cdc_b_conversion_complete = 1;
 	}
 }
 

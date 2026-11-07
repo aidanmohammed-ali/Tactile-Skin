@@ -106,7 +106,7 @@ void set_mux_col(uint8_t addr) {
 }
 
 /**
- * @brief Performs a parallel scan.
+ * @brief Performs a CDC1-only scan.
  * @param buffer Pointer to the memory where values will be stored.
  */
 void matrix_scan_parallel(uint16_t* buffer) {
@@ -114,16 +114,13 @@ void matrix_scan_parallel(uint16_t* buffer) {
 			board_config.trigger_scan_func == NULL || board_config.stop_scan_func == NULL) {
 		return;
 	}
-	uint16_t half_width = board_config.active_cols / 2;
-	
 	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
 		board_config.set_row_func(r);
-		board_config.trigger_scan_func();
-		board_config.stop_scan_func();
 		
+		board_config.trigger_scan_func(1);
+		board_config.stop_scan_func(1);
 		size_t base_index = (r * board_config.active_cols);
 		get_row(&buffer[base_index], 0);
-		get_row(&buffer[base_index + half_width], 1);
 	}
 	board_config.set_row_func(0);
 }

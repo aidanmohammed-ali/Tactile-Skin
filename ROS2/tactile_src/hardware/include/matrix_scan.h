@@ -17,8 +17,8 @@ typedef struct {
 	void (*set_col_func)(uint8_t addr);
 	
 	// Synchronisation Hooks
-	void (*trigger_scan_func)(void);
-	void (*stop_scan_func)(void);
+	void (*trigger_scan_func)(int id);
+	void (*stop_scan_func)(int id);
 	void (*wait_ready_func)(uint8_t stage);
 	
 	uint8_t use_parallel_scan;
