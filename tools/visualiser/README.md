@@ -19,7 +19,7 @@ The most reliable way to compile the C++ Raylib environment on Windows is via th
    ```bash
    pacman -Syu
    pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-raylib
-4. Navigate to the project directory. Ensure `raygui.h` is located in the same folder as `main.cpp`.
+4. Navigate to the project directory.
 5. Compile the program. Windows requires explicitly linking  the underlying OS graphics and media subsystems:
 
    ```bash

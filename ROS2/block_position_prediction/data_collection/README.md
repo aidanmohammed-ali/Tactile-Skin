@@ -16,7 +16,7 @@ fixed 6-taxel square footprint when pose is available.
 Run from the project root:
 
 ```bash
-cd /home/peterchen/Documents/Tactile_GroupProject
+cd <path_to_project_directory>/ROS2
 ```
 
 Python packages used by the tool:
