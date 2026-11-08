@@ -2,8 +2,9 @@
 OpenCV-based tactile skin visualiser.
 
 This mirrors the C++ Raylib visualiser processing chain:
-raw uint16[128] frame -> 5-sample median -> EMA low-pass -> 2D spatial smoothing
--> optional tare baseline removal -> 0..1 display values.
+USB CDC transport frame (8 rows x 16 uint16 values, little-endian) -> 5-sample
+median -> EMA low-pass -> 2D spatial smoothing -> optional tare baseline removal
+-> 0..1 display values.
 """
 
 import argparse
@@ -25,6 +26,8 @@ ROWS = 8
 COLS = 16
 NUM_TAXELS = ROWS * COLS
 FRAME_BYTES = NUM_TAXELS * 2
+MAGIC_HEADER = b"\xDE\xAD\xBE\xEF"
+PACKET_BYTES = len(MAGIC_HEADER) + FRAME_BYTES
 CAPTURE_FRAMES = 10
 CAPTURE_SAMPLES_PER_FRAME = NUM_TAXELS
 
@@ -145,11 +148,22 @@ class SerialFrameReader:
         if waiting > 0:
             self.buffer.extend(self.serial.read(waiting))
 
-        if len(self.buffer) < FRAME_BYTES:
+        header_index = self.buffer.find(MAGIC_HEADER)
+        if header_index < 0:
+            # Preserve a possible partial marker at the end of the byte stream.
+            keep_bytes = len(MAGIC_HEADER) - 1
+            if len(self.buffer) > keep_bytes:
+                del self.buffer[:-keep_bytes]
             return None
 
-        frame_bytes = self.buffer[:FRAME_BYTES]
-        del self.buffer[:FRAME_BYTES]
+        if header_index > 0:
+            del self.buffer[:header_index]
+
+        if len(self.buffer) < PACKET_BYTES:
+            return None
+
+        frame_bytes = self.buffer[len(MAGIC_HEADER):PACKET_BYTES]
+        del self.buffer[:PACKET_BYTES]
         return np.frombuffer(frame_bytes, dtype="<u2").copy()
 
 
