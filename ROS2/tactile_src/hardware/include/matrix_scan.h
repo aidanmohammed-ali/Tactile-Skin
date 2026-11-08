@@ -116,6 +116,12 @@ void get_row(uint16_t *row, uint8_t cdc_id);
 void matrix_scan_parallel(uint16_t* buffer);
 
 /**
+ * @brief Select whether parallel scans use both AD7142 CDCs.
+ * @param enabled Non-zero enables the second CDC; zero scans CDC A only.
+ */
+void matrix_set_dual_cdc_enabled(uint8_t enabled);
+
+/**
  * @brief Bridge function for microsecond delays.
  * @param us Delay time in microseconds.
  */

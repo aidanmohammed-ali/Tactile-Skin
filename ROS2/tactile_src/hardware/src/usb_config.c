@@ -11,6 +11,10 @@
 #include "usbd_cdc.h"
 #include "usbd_conf.h"
 
+// Implemented by the hardware driver.  USB commands use ASCII TSM1 for
+// single-CDC scanning and TSM2 for dual-CDC scanning.
+extern void tactile_set_scan_mode(uint8_t dual_cdc);
+
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 USBD_HandleTypeDef hUsbDeviceFS;
 
@@ -18,6 +22,31 @@ USBD_HandleTypeDef hUsbDeviceFS;
 static uint8_t UserTxBufferFS[2048];
 // Private reception buffer for CDC data
 static uint8_t UserRxBufferFS[2048];
+
+/* USB may split a four-byte command across OUT transfers. */
+static uint8_t scan_mode_command_match;
+
+static void process_scan_mode_byte(uint8_t byte) {
+	static const uint8_t command_prefix[] = {'T', 'S', 'M'};
+
+	if (scan_mode_command_match < sizeof(command_prefix)) {
+		if (byte == command_prefix[scan_mode_command_match]) {
+			scan_mode_command_match++;
+		} else {
+			scan_mode_command_match = (byte == command_prefix[0]) ? 1u : 0u;
+		}
+		return;
+	}
+
+	if (byte == '1') {
+		tactile_set_scan_mode(0u);
+	} else if (byte == '2') {
+		tactile_set_scan_mode(1u);
+	}
+
+	/* The last byte cannot be the start of the TSM prefix, so reset. */
+	scan_mode_command_match = 0u;
+}
 
 // Standard device descriptor
 static const uint8_t DeviceDescriptorFS[18] = {
@@ -236,6 +265,11 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length) {
  * @retval USBD_OK if processing succeeded.
  */
 static int8_t CDC_Receive_FS(uint8_t *pbuf, uint32_t *len) {
+	if (pbuf != NULL && len != NULL) {
+		for (uint32_t i = 0; i < *len; ++i) {
+			process_scan_mode_byte(pbuf[i]);
+		}
+	}
 	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, pbuf);
 	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 	return (USBD_OK);

@@ -32,10 +32,12 @@ CAPTURE_FRAMES = 10
 CAPTURE_SAMPLES_PER_FRAME = NUM_TAXELS
 
 CELL_SIZE = 75
-BAR_HEIGHT = 60
+BAR_HEIGHT = 86
 WINDOW_WIDTH = COLS * CELL_SIZE
 WINDOW_HEIGHT = ROWS * CELL_SIZE
 CAPTURE_DIR = Path(__file__).resolve().parent / "captures"
+
+SCAN_MODE_BUTTON = (950, 47, 230, 30)
 
 
 class Processor:
@@ -62,13 +64,24 @@ class Processor:
         self.curve_b.fill(1.0)
         self.curve_c.fill(0.0)
 
-    def tare(self):
-        self.curve_c[:] = self.spatial_temp
+    def tare(self, baseline=None):
+        """Capture a baseline from filtered data or an unfiltered raw frame."""
+        if baseline is None:
+            self.curve_c[:] = self.spatial_temp
+        else:
+            self.curve_c[:] = np.asarray(baseline, dtype=np.float32).reshape(self.num_taxels)
         denominator = 65535.0 - self.curve_c
         denominator = np.maximum(denominator, 1.0)
         self.curve_b[:] = 1.0 / denominator
         self.curve_a.fill(0.0)
         self.state = self.STATE_READY
+
+    def normalise_raw_frame(self, raw_frame):
+        """Scale raw data, applying the captured tare when one is available."""
+        raw = np.asarray(raw_frame, dtype=np.float32)
+        if self.state == self.STATE_READY:
+            return np.clip((raw - self.curve_c) * self.curve_b, 0.0, 1.0)
+        return np.clip(raw / 65535.0, 0.0, 1.0)
 
     def process_frame(self, raw_frame):
         self._filter_frame_interval(raw_frame)
@@ -166,6 +179,12 @@ class SerialFrameReader:
         del self.buffer[:PACKET_BYTES]
         return np.frombuffer(frame_bytes, dtype="<u2").copy()
 
+    def set_scan_mode(self, dual_cdc):
+        """Ask the STM32 to scan with either one or both CDCs."""
+        command = b"TSM2" if dual_cdc else b"TSM1"
+        self.serial.write(command)
+        self.serial.flush()
+
 
 def make_simulated_frame(simulation_time):
     frame = np.zeros(NUM_TAXELS, dtype=np.uint16)
@@ -183,7 +202,7 @@ def make_simulated_frame(simulation_time):
     return frame
 
 
-def draw_visualisation(processed_frame, hardware_online, tared, raw_mode, top5_average_mode, port_name):
+def draw_visualisation(processed_frame, hardware_online, tared, raw_mode, top5_average_mode, port_name, dual_cdc_mode):
     image = np.zeros((WINDOW_HEIGHT + (2 * BAR_HEIGHT), WINDOW_WIDTH, 3), dtype=np.uint8)
     values = processed_frame.reshape(ROWS, COLS)
 
@@ -206,11 +225,19 @@ def draw_visualisation(processed_frame, hardware_online, tared, raw_mode, top5_a
             cv2.putText(image, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
     cv2.rectangle(image, (0, 0), (WINDOW_WIDTH, BAR_HEIGHT), (0, 0, 0), thickness=-1)
-    top_label = "10-FRAME TOP-5 AVERAGE" if top5_average_mode else ("RAW PASSTHROUGH" if raw_mode else ("TARED" if tared else "SYSTEM OPERATIONAL"))
+    top_label = "10-FRAME TOP-5 AVERAGE" if top5_average_mode else ("RAW TARED" if raw_mode and tared else ("RAW PASSTHROUGH" if raw_mode else ("TARED" if tared else "SYSTEM OPERATIONAL")))
     top_color = (0, 255, 0) if tared else (0, 165, 255)
     cv2.putText(image, top_label, (25, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.7, top_color, 2, cv2.LINE_AA)
-    cv2.putText(image, "C: tare   R: reset   F: raw/filter   T: top5 avg   P: plot   M: snap   Q/Esc: quit", (WINDOW_WIDTH - 900, 38),
+    cv2.putText(image, "C: tare   R: reset   F: raw/filter   T: top5 avg   P: plot   M: snap   D: CDC mode   Q/Esc: quit", (25, 72),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (210, 210, 210), 1, cv2.LINE_AA)
+
+    button_x, button_y, button_w, button_h = SCAN_MODE_BUTTON
+    button_color = (0, 135, 0) if dual_cdc_mode else (0, 115, 185)
+    cv2.rectangle(image, (button_x, button_y), (button_x + button_w, button_y + button_h), button_color, thickness=-1)
+    cv2.rectangle(image, (button_x, button_y), (button_x + button_w, button_y + button_h), (230, 230, 230), thickness=1)
+    button_text = "CDC: DUAL (click)" if dual_cdc_mode else "CDC: SINGLE (click)"
+    cv2.putText(image, button_text, (button_x + 10, button_y + 21),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 1, cv2.LINE_AA)
 
     bottom_y = WINDOW_HEIGHT + BAR_HEIGHT
     cv2.rectangle(image, (0, bottom_y), (WINDOW_WIDTH, bottom_y + BAR_HEIGHT), (0, 0, 0), thickness=-1)
@@ -221,6 +248,11 @@ def draw_visualisation(processed_frame, hardware_online, tared, raw_mode, top5_a
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
     return image
+
+
+def point_in_scan_mode_button(x, y):
+    button_x, button_y, button_w, button_h = SCAN_MODE_BUTTON
+    return button_x <= x <= button_x + button_w and button_y <= y <= button_y + button_h
 
 
 def get_capture_samples(raw_frame):
@@ -365,6 +397,7 @@ def main():
     capture_active = False
     max_capture_active = False
     top5_average_mode = False
+    dual_cdc_mode = True
     capture_frames = []
     max_capture_frames = []
     recent_raw_frames = []
@@ -379,6 +412,14 @@ def main():
             hardware_online = False
 
     cv2.namedWindow("Tactile Skin OpenCV Visualiser", cv2.WINDOW_AUTOSIZE)
+    scan_mode_click_requested = [False]
+
+    def handle_mouse(event, x, y, flags, param):
+        del flags, param
+        if event == cv2.EVENT_LBUTTONUP and point_in_scan_mode_button(x, y):
+            scan_mode_click_requested[0] = True
+
+    cv2.setMouseCallback("Tactile Skin OpenCV Visualiser", handle_mouse)
     simulation_start = time.perf_counter()
     last_frame_time = simulation_start
 
@@ -420,7 +461,7 @@ def main():
             if top5_average_mode:
                 processed = top5_average_over_recent_frames(recent_raw_frames)
             elif raw_mode:
-                processed = np.clip(current_frame.astype(np.float32) / 65535.0, 0.0, 1.0)
+                processed = processor.normalise_raw_frame(current_frame)
             else:
                 processed = processor.process_frame(current_frame)
 
@@ -431,6 +472,7 @@ def main():
                 raw_mode,
                 top5_average_mode,
                 args.port,
+                dual_cdc_mode,
             )
             cv2.imshow("Tactile Skin OpenCV Visualiser", image)
 
@@ -438,8 +480,8 @@ def main():
             if key in (ord("q"), ord("Q"), 27):
                 break
             if key in (ord("c"), ord("C")):
-                processor.tare()
-                print("[TARE] Baseline captured.")
+                processor.tare(current_frame if raw_mode else None)
+                print("[TARE] Raw baseline captured." if raw_mode else "[TARE] Filtered baseline captured.")
             if key in (ord("r"), ord("R")):
                 processor.reset_calibration()
                 print("[RESET] Returning to raw passthrough.")
@@ -463,6 +505,22 @@ def main():
                     raw_mode = False
                 mode_name = "10-frame top-5 average" if top5_average_mode else "filtered processing"
                 print(f"[MODE] Showing {mode_name}.")
+            if key in (ord("d"), ord("D")):
+                scan_mode_click_requested[0] = True
+
+            if scan_mode_click_requested[0]:
+                scan_mode_click_requested[0] = False
+                if reader is None:
+                    print("[CDC MODE] Connect to hardware before changing the STM32 scan mode.")
+                else:
+                    dual_cdc_mode = not dual_cdc_mode
+                    try:
+                        reader.set_scan_mode(dual_cdc_mode)
+                        mode_name = "dual CDC" if dual_cdc_mode else "single CDC"
+                        print(f"[CDC MODE] Requested {mode_name} scanning.")
+                    except Exception as exc:
+                        dual_cdc_mode = not dual_cdc_mode
+                        print(f"[CDC MODE] Could not send mode command: {exc}")
 
             elapsed = time.perf_counter() - last_frame_time
             if elapsed < (1.0 / 60.0):

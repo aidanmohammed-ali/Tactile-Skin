@@ -9,6 +9,7 @@
 #include <stddef.h>
 
 static matrix_config_t board_config;
+static volatile uint8_t dual_cdc_enabled = 1;
 
 /**
  * @brief Initialise the hardware pins on the microcontroller.
@@ -33,6 +34,10 @@ void matrix_init(matrix_config_t* config) {
 			board_config.active_cols > MAX_DIMENSION) {
 		return;	
 	}
+}
+
+void matrix_set_dual_cdc_enabled(uint8_t enabled) {
+	dual_cdc_enabled = enabled ? 1u : 0u;
 }
 
 /**
@@ -115,20 +120,8 @@ void matrix_scan_parallel(uint16_t* buffer) {
 		return;
 	}
 	uint16_t half_width = board_config.active_cols / 2;
-	
+	uint8_t use_dual_cdc = dual_cdc_enabled;
 
-	// Power off the CDC1 and only run CDC0 for the first half of the scan. This is to avoid interference between the two CDCs.
-	// board_config.stop_scan_func(1);
-	// for (uint16_t r = 0; r < board_config.active_rows; ++r) {
-	// 	board_config.set_row_func(r);
-
-	// 	board_config.trigger_scan_func(0);
-	// 	board_config.stop_scan_func(0);
-	// 	size_t base_index = (r * board_config.active_cols);
-	// 	get_row(&buffer[base_index], 0);
-	// }
-
-	// Run with both CDCs for half of the max frame rate.
 	for (uint16_t r = 0; r < board_config.active_rows; ++r) {
 		board_config.set_row_func(r);
 		size_t base_index = (r * board_config.active_cols);
@@ -137,9 +130,17 @@ void matrix_scan_parallel(uint16_t* buffer) {
 		board_config.stop_scan_func(0);
 		get_row(&buffer[base_index], 0);
 
-		board_config.trigger_scan_func(1);
-		board_config.stop_scan_func(1);
-		get_row(&buffer[base_index + half_width], 1);
+		if (use_dual_cdc) {
+			board_config.trigger_scan_func(1);
+			board_config.stop_scan_func(1);
+			get_row(&buffer[base_index + half_width], 1);
+		} else {
+			// A complete USB frame is always 8 x 16.  Clear CDC B's half so
+			// switching from dual mode cannot leave values from an older frame.
+			for (uint16_t c = half_width; c < board_config.active_cols; ++c) {
+				buffer[base_index + c] = 0;
+			}
+		}
 	}
 
 	board_config.set_row_func(0);

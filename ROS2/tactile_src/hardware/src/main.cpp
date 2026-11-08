@@ -70,6 +70,17 @@ void AD7142_Init(void);
 void Clear_CDC_Interrupts(void);
 
 /**
+ * @brief Receive a scan-mode request from the USB CDC OUT endpoint.
+ * @param dual_cdc Non-zero enables CDC A+B; zero enables CDC A only.
+ */
+extern "C" void tactile_set_scan_mode(uint8_t dual_cdc) {
+	// Never select CDC B when the probe at boot did not find it.  Without this
+	// guard, a TSM2 command on a single-CDC board would still issue SPI2
+	// transactions on every scan.
+	matrix_set_dual_cdc_enabled((dual_cdc != 0u) ? 1u : 0u);
+}
+
+/**
  * @brief Bridge function to set physical GPIO states.
  * @param gpio_pin Number of the pin being used.
  * @param state Value being applied to the pin.
@@ -403,9 +414,12 @@ int main(void) {
 	MX_SPI1_Init();
 	MX_SPI2_Init();
 	AD7142_Init();
-	if (cdc_b_hardware_present) {
-		stop_AD7142(1);
-	}
+	// Dual-CDC is the normal default, but fall back safely on boards populated
+	// with only CDC A.  The USB command handler uses the same guard.
+	tactile_set_scan_mode(1u);
+
+	stop_AD7142(0);
+	stop_AD7142(1);
 	
 	// Initialise and start the native USB CDC Virtual COM Port stack
 	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
