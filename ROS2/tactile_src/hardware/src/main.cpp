@@ -44,6 +44,12 @@ typedef struct {
 	uint16_t reg_val;
 } ad7142_reg_config_t;
 
+static constexpr uint16_t AD7142_PWR_CONTROL = 0x000;
+static constexpr uint16_t AD7142_AMB_COMP_CTRL0 = 0x002;
+static constexpr uint16_t AD7142_POWER_MODE_MASK = 0x0003;
+static constexpr uint16_t AD7142_FULL_SHUTDOWN = 0x0001;
+static constexpr uint16_t AD7142_CONV_RESET = 0x8000;
+
 // Hardware initialisation
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
@@ -220,28 +226,29 @@ extern "C" void delay_us(uint16_t us) {
 /**
  * @brief Tells the AD7142 to perform exactly one scan of the current row.
  */
-void trigger_AD7142(void) {
+void trigger_AD7142(uint8_t cdc_id) {
 	HAL_Delay(1);
-	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x002, 0x8FF0);
-	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0170);
-	
-	if (cdc_b_hardware_present) {
+	if(cdc_id == 0){
+		AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x002, 0x8FF0);
+		AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0170);
+		HAL_Delay(13);
+	}
+	else if(cdc_id == 1){
 		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x002, 0x8FF0);
 		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x000, 0x0170);
+		HAL_Delay(13);
 	}
 }
 
 /**
- * @brief Tells the AD7142 to stop. Call this function when receiving the stage7 interrupt.
+ * @brief Wait for 13 ms for a full row scan to complete, then stop AD7142 conversions using Full Shutdown mode.
  */
-void stop_AD7142(void){
-	HAL_Delay(13);
-
-	AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0171);
-	if(cdc_b_hardware_present){
+void stop_AD7142(uint8_t cdc_id) {
+	if(cdc_id == 0){
+		AD7142_Write_Reg(&hspi1, GPIOA, GPIO_PIN_4, 0x000, 0x0171);
+	}else if(cdc_id == 1){
 		AD7142_Write_Reg(&hspi2, GPIOB, GPIO_PIN_12, 0x000, 0x0171);
 	}
-
 	Clear_CDC_Interrupts();
 }
 
@@ -385,6 +392,9 @@ int main(void) {
 	MX_SPI1_Init();
 	MX_SPI2_Init();
 	AD7142_Init();
+	if (cdc_b_hardware_present) {
+		stop_AD7142(1);
+	}
 	
 	// Initialise and start the native USB CDC Virtual COM Port stack
 	USBD_Init(&hUsbDeviceFS, &FS_Desc, 0);
